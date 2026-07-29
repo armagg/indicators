@@ -8,8 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py tasks.py ./
-COPY indicators/ ./indicators/
+COPY app.py ./
+COPY ta/ ./ta/
 
 EXPOSE 5000
 

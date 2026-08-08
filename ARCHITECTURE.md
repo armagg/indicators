@@ -6,22 +6,116 @@
 
 ## Purpose
 
-Research-only technical analysis toolkit on Iranian-market OHLC (and later
-MM book history). Compute indicators and other analysis types, persist
-results, and evaluate how TA-derived **parameter overlays** would have
-changed market-maker behaviour in replay.
+An **insight engine** for the desk's Iranian markets. It reads market data,
+forms a view on each market from technical analysis, stores that view, and
+**proposes** market-maker parameter changes. Proposals reach the live system
+only after a human approves them, and only through `config-manager`.
 
-**Chosen scope (locked):**
-- **Mode A — research toolkit.** Library + thin HTTP/CLI. Writes analytics
-  stores. Does **not** drive live `market_maker` or config-manager.
-- **Backtest — MM-aware.** Replay historical fair mid + books against a
-  quoting simulator. Classic OHLC long/short signal backtests are out of
-  scope unless added later by explicit ARCHITECTURE change.
+**Chosen scope (revised 2026-07-30, supersedes the original "Mode A"):**
 
-**Explicit non-goals (for now):**
-- Live RSI/MACD entry signals into the MM loop.
-- Replacing `crypto_price` fair value with TA mid.
-- Kafka producers/consumers inside this project.
+- **Insight, not autonomy.** The project's output is a view a human can act
+  on: indicator values, analysis verdicts, and concrete proposed parameter
+  changes with the reasoning attached. It never decides alone.
+- **Data access is in scope.** Reading Mongo (OHLC, trades) and ClickHouse
+  is normal operation, not "integration". Reading is unrestricted.
+- **Config writes are in scope, gated by approval.** The project may write
+  allowlisted fields to `config-manager` — but every write descends from a
+  proposal a human explicitly approved. There is no path from an analysis
+  straight to a live config.
+- **Its own store.** The project persists its own analytics, proposals, and
+  decision history to Mongo (ClickHouse later if volume demands it).
+- **Backtest.** Evaluate proposed parameters against history before they are
+  approved. Candle-based first (self-contained); book-replay later, when
+  absolute PnL claims are needed.
+
+**Explicit non-goals:**
+- Autonomous config changes of any kind. Approval is not bypassable, not
+  even for "safe" fields.
+- Automated cross-market ranking that decides which markets to run.
+  Market selection is a human decision the project *informs* — see
+  "Market tiering" below.
+- Live RSI/MACD entry signals into the MM loop; TA feeds parameters, never
+  entries.
+- Replacing `crypto_price` fair value with a TA mid.
+- Importing or running `market_maker`'s runtime code, or Kafka anywhere.
+
+## Market tiering
+
+Markets are not equal and the default posture is not symmetric:
+
+- **Major markets** are enabled and are the ones the desk actively quotes.
+- **Everything else is disabled by default.** Smaller markets carry more
+  risk — thinner books, wider gaps, sparser candles, less trustworthy
+  volume — so the burden of proof is on turning one *on*, not off.
+
+The project maintains the tier list and surfaces per-exchange views of what
+is enabled, what is disabled, and what the data says about each. Flipping
+`is_enable` in either direction is a proposal requiring approval; no overlay
+sets it automatically.
+
+## Permission model
+
+Every change follows the same path, with no shortcuts:
+
+```
+analysis → proposal (ConfigDelta + reason + evidence)
+        → stored, status=pending
+        → human approves or rejects   ← the gate
+        → apply: re-read active config, compose, PUT to config-manager
+        → record outcome + resulting version
+```
+
+Rules:
+
+1. A proposal names only allowlisted fields (below) and carries the
+   reasoning that produced it.
+2. Nothing is applied without a recorded approval naming who approved it.
+3. `config-manager`'s `PUT /config/market/{source}/{market_name}` takes a
+   **whole** `ConfigSchema` and creates a new version, so applying is a
+   read-modify-write. The active version is re-read immediately before the
+   PUT and compared against the version the proposal was based on; if it
+   moved, the apply **fails and returns for re-approval** rather than
+   clobbering whatever the calibrators wrote in between.
+   Note the read and write shapes differ: `GET` returns a wrapper
+   `{source, market_name, version, timestamp, config: {...}}` while `PUT`
+   takes the bare inner `config`. `ta/configclient.py` owns that unwrapping;
+   nothing else should reason about it.
+4. Every apply records the base version and the resulting version, so any
+   change this project made can be traced and rolled back.
+
+## Overlay allowlist
+
+Fields the project may propose. Anything not listed is out of bounds, and
+`ConfigDelta` cannot even represent it. Two groups, because they compose
+differently:
+
+**Scaling (relative, stackable)**
+
+| Field | Meaning |
+|---|---|
+| `spread_multiplier` | Two-sided scale on the grid; moves both band edges together |
+| `vol_spread_sensitivity` | Fast volatility response |
+| `structural_premium` + `premium_skew_factor` | Reference tilt; always proposed as a pair, the premium is inert without the gate |
+| `disable_buy` / `disable_sell` | Per-side pause. May be set, never cleared — the live flags belong to the risk control plane |
+
+**Absolute (set outright, conflicts refused rather than merged)**
+
+| Field | Meaning |
+|---|---|
+| `price_min_spread` / `price_max_spread` | The raw band. Needed because `spread_multiplier` cannot move one edge alone |
+| `min_base` / `max_base` | Inventory band; `max_base` also sets each cycle's buy/sell totals, so it is the real "size shown" knob |
+| `is_enable` | Per-market switch. Human-proposed only |
+| `number_of_order_each_sides` | Ladder depth per side |
+| `target_base` | **Approved 2026-07-31, implemented in PLAN step 10.** The inventory level the skew treats as neutral. Carries the directional tilt; capped so a proposal may not move it more than a set fraction (default 30%) of the band from its midpoint, and never outside `[min_base, max_base]` |
+
+Invariants enforced when a delta is composed onto a config: `price_min_spread
+<= price_max_spread`, `min_base <= max_base`, and no proposal may set
+`price_min_spread` below the break-even half-spread of **one** `maker_fee` —
+the maker would clamp it, making the change a silent no-op. Note it is one
+fee, not two: a round trip is gross `2s` against `2 x maker_fee` of fees, so
+break-even is `s == maker_fee`. `market_maker._spread_floor` records that
+using `2x` here was a real bug which forbade the band where nobitex's
+expected value peaks.
 
 ## Current state (baseline)
 
@@ -41,18 +135,22 @@ on OHLC, no analyzer abstraction, no backtester, not on any trading path.
    `market-data-collector` → Mongo `market_making.ohlc`. Always filter by
    `market_name`, `interval`, and **`source`** (baseline bug: `source` is
    ignored today).
-4. **MM-aware backtest is a simulator, not a replay of `MarketMaker`.**
-   Do not import and run the live agent loop. Extract / mirror the **pure
-   quoting math** (ladder prices, spread scale, inventory skew, fee floor)
-   into a side-effect-free simulator fed by historical series.
-5. **TA feeds overlays, not entries.** In backtests, indicators produce
-   parameter deltas (e.g. widen `spread_multiplier`, tilt
-   `premium_skew_factor`, soft `disable_buy`/`disable_sell`) applied on
-   top of a baseline MM config — the same mental model as offline
-   calibrators in `crypto_price/python/analysis`, without writing live
-   config.
-6. **No new MD docs beyond ARCHITECTURE / PLAN / RUNNING.** Code and these
-   two files carry design; avoid README sprawl unless asked.
+4. **Backtest is a simulator, not a replay of `MarketMaker`.** Do not
+   import or run the live agent loop. Mirror the **pure quoting math**
+   (ladder prices, spread scale, inventory skew, fee floor) into a
+   side-effect-free simulator fed by historical series.
+5. **TA feeds parameters, not entries.** Indicators produce parameter
+   deltas (widen the band, tilt the reference, size down, pause a side) on
+   top of a baseline MM config — the same mental model as the offline
+   calibrators in `crypto_price/python/analysis`.
+6. **Every proposal carries its evidence.** A stored proposal must contain
+   the analysis output that justified it, not just the resulting numbers.
+   An approver who cannot see why is being asked to rubber-stamp.
+7. **Reads are free, writes are gated.** Any module may read any data
+   source. Exactly one module may write to config-manager, and only for an
+   approved proposal.
+8. **No new MD docs beyond ARCHITECTURE / PLAN / RUNNING.** Code and these
+   files carry design; avoid README sprawl unless asked.
 
 ## Layout (as built — import root is `ta`, decided during step 1)
 
@@ -80,9 +178,22 @@ Indicators/
     analysis/                 # verdict-level analyses: volatility, trend, regime
       types.py                # AnalysisResult + loose-param plumbing
     signals/
-      overlays.py             # ConfigDelta (allowlisted) + vol_widen/trend_tilt/squeeze_brace
+      overlays.py             # ConfigDelta (allowlisted) + the overlay functions
+    proposals/                # the approval gate
+      models.py               # Proposal, Status, derived id, evidence
+      lifecycle.py            # pure state machine; APPLIED only via APPROVED
+      store.py                # ta_proposals + append-only ta_decisions
+      __main__.py             # python -m ta.proposals list|show|approve|reject|apply
+      apply.py                # the ONLY module that may write config
+    configclient.py           # config-manager client (stdlib urllib, injectable transport)
+    tiers.py                  # ta_market_tiers: major/other, unknown = other
+    view.py                   # per-exchange view; python -m ta.view
     pipeline.py               # one fetch → indicators + analyses → JSON; python -m ta.pipeline
-    backtest/                 # (later) simulator.py, runner.py, metrics.py, readers
+    backtest/
+      simulator.py            # pure mirror of the live quoting math (copied, never imported)
+      runner.py               # walk bars, fill, score; carries the upper-bound caveat
+      metrics.py              # fee-aware PnL, uptime, inventory, markout
+      sweep.py                # ranked grid over allowlisted knobs
   tests/
 ```
 
@@ -147,20 +258,25 @@ HTTP `GET /indicator` stays as a compatibility shim that builds one
 Overlays are pure functions:
 
 ```
-OverlayContext(analysis_results, wall_clock) → ConfigDelta
+OverlayContext(analysis_results, wall_clock, current_config) → ConfigDelta
 ```
 
-`ConfigDelta` only touches fields that exist on MM `ConfigSchema` (or an
-explicit allowlist in this ARCHITECTURE). Initial allowlist:
+`current_config` is part of the context because absolute fields cannot be
+proposed blind — a new `price_max_spread` is meaningless without the old
+one. Overlays never read it from anywhere themselves; it is passed in.
 
-- `spread_multiplier`
-- `premium_skew_factor` / `structural_premium` (research tilt only)
-- `disable_buy` / `disable_sell`
-- `vol_spread_sensitivity` (optional)
+The allowlist is in "Overlay allowlist" above. `ConfigDelta` is the only
+representation of a change in this project, and it is structurally
+incapable of naming a field outside that list.
 
-No overlay invents new live MM fields. Live publish to config-manager is
-**forbidden** in this project until Mode B is approved and this file is
-updated.
+Composition, when several overlays fire at once: scaling fields stack
+(multipliers multiply and are capped, sensitivities take the max, pauses
+OR together, the strongest premium wins whole so tilts are never summed).
+Absolute fields must agree — two overlays proposing different `max_base`
+is a real disagreement and **raises** rather than silently picking one.
+
+`is_enable` is deliberately not driven by any automatic overlay. Turning a
+market on or off is a human decision, routed through the proposal flow.
 
 ## MM-aware simulator (honest boundaries)
 
@@ -186,28 +302,40 @@ updated.
 compare extracted helpers against golden values from `market_maker` unit
 expectations, or the divergence is listed in the run report.
 
-## Integration map (research only)
+## Integration map
 
 ```
-market-data-collector → Mongo ohlc ──► Indicators analyses
-crypto_price CH fair_value_snapshots ─┐
-pnl-tracker CH mm_books / fills ──────┴► MM-aware backtest runner
-market_maker ConfigSchema (shape only) ─► baseline + overlay allowlist
+READ (unrestricted)
+  market-data-collector → Mongo ohlc / trades ──► analyses
+  crypto_price CH fair_value_snapshots ─┐
+  pnl-tracker CH mm_books / fills ──────┴──────► backtest
+  config-manager GET /config/market/{source}/ ─► current state + tier view
 
-Live market_maker / config-manager / Kafka  ←── NOT connected
+OWN STORE
+  Mongo: indicators_data, ta_proposals, ta_decisions, ta_market_tiers
+                                                (CH later if volume needs it)
+
+WRITE (single gated path)
+  proposal → human approval → config-manager PUT /config/market/{src}/{mkt}
+
+NEVER
+  market_maker runtime code · Kafka · exchange APIs · autonomous writes
 ```
 
-Future Mode B (not approved): periodic job writes allowlisted deltas to
-config-manager, same as calibrators. Requires ARCHITECTURE change.
+Only `ta/proposals/apply.py` may perform the write. Nothing else in the
+package imports an HTTP client for config-manager.
 
 ## Stack
 
 - Python 3.13+ (match current Dockerfile; avoid 3.14-only breakage).
 - pandas / numpy for series math. No `pandas_ta` / ta-lib unless approved.
-- pymongo for OHLC + results. clickhouse-connect (or existing stack client)
-  for backtest series.
-- Flask kept as optional HTTP surface; pytest required for core math,
-  registry, overlay, and simulator.
+- pymongo for candles, results, proposals. The config-manager client uses
+  stdlib `urllib` behind an injectable transport — it is a handful of JSON
+  calls, and this project has twice been bitten by third-party wheels not
+  existing for its Python version. clickhouse-connect for backtest series,
+  later.
+- Flask kept as the HTTP surface; pytest required for core math, registry,
+  overlays, proposal lifecycle, and simulator.
 
 ## Quality bar
 
@@ -215,3 +343,6 @@ config-manager, same as calibrators. Requires ARCHITECTURE change.
 - `source` always required for multi-venue markets.
 - Tests for each registered indicator against a fixed OHLC fixture.
 - Simulator tests with synthetic mid + book paths (no live DB required).
+- **The approval gate is tested as a safety property**, not just a
+  happy path: an unapproved proposal must never produce a write, and a
+  stale-version apply must fail rather than clobber.

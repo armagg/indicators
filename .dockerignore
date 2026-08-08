@@ -1,6 +1,9 @@
 venv/
+.venv/
 .env
 .git/
 .codegraph/
 __pycache__/
 *.pyc
+cache/
+.DS_Store

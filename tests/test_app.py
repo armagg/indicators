@@ -105,3 +105,40 @@ def test_analysis_endpoint(client, monkeypatch):
         ).status_code
         == 400
     )
+
+
+def test_shadow_endpoints_survive_the_three_field_watchlist(client, monkeypatch):
+    """Regression: `watchlist_from_env` returns (market, source, config_market)
+    triples, and the status endpoint used to unpack them as pairs — a 500
+    that only appeared once a config alias was configured."""
+    import ta.research.shadow as shadow_module
+
+    monkeypatch.setenv("SHADOW_MARKETS", "USDTIRT:nobitex:USDTRLS,USDTIRR:ramzinex")
+
+    class FakeStore:
+        def markets(self):
+            return [("USDTIRT", "nobitex")]
+
+        def rows(self, market, source, limit=5000):
+            return [{"bar_time": "2026-07-31T13:30:00", "tilt": 0.1, "mid": 1.0,
+                     "implied_target_base": 230.4, "live_target_base": None,
+                     "live_config_version": 109}]
+
+        def count(self):
+            return 1
+
+    monkeypatch.setattr(shadow_module, "default_store", lambda: FakeStore())
+    monkeypatch.setattr(
+        "ta.research.scheduler.default_scheduler", lambda: None
+    )
+
+    response = client.get("/research/shadow")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["watchlist"] == [
+        "USDTIRT/nobitex (config: USDTRLS)", "USDTIRR/ramzinex"
+    ]
+    assert body["markets"]["USDTIRT/nobitex"]["observations"] == 1
+
+    score = client.get("/research/shadow/score")
+    assert score.status_code == 200

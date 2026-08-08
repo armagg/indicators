@@ -124,6 +124,170 @@ def get_indicator_endpoint():
     return jsonify(payload), 200
 
 
+@app.get("/research/scenarios")
+def research_scenarios():
+    """Saved job batches. Named and versioned with the code, so re-running
+    one later means the same thing it meant before."""
+    from ta.research import list_scenarios
+
+    return jsonify({"scenarios": list_scenarios()})
+
+
+@app.post("/research/scenarios/<name>")
+def research_run_scenario(name: str):
+    """Enqueue every job in a scenario. Already-active duplicates are reused."""
+    from ta.research import default_queue, expand
+
+    try:
+        specs = expand(name)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    submitted = default_queue().submit_many(specs)
+    return jsonify({
+        "scenario": name,
+        "submitted": [
+            {"id": job["_id"], "market": job["market"], "source": job["source"],
+             "interval": job["interval"], "family": job["family"],
+             "status": job["status"], "deduplicated": job["deduplicated"]}
+            for job in submitted
+        ],
+    }), 202
+
+
+@app.post("/research/jobs")
+def research_submit():
+    """Submit one job, or a list of them, as JSON."""
+    from ta.research import DEFAULTS, default_queue
+
+    body = request.get_json(silent=True)
+    if body is None:
+        return jsonify({"error": "send a JSON job object or a list of them"}), 400
+    specs = body if isinstance(body, list) else [body]
+    for spec in specs:
+        missing = [k for k in ("market", "source") if not spec.get(k)]
+        if missing:
+            return jsonify({"error": f"job missing {', '.join(missing)}"}), 400
+    submitted = default_queue().submit_many([{**DEFAULTS, **s} for s in specs])
+    return jsonify({"submitted": [
+        {"id": j["_id"], "status": j["status"], "deduplicated": j["deduplicated"]}
+        for j in submitted
+    ]}), 202
+
+
+@app.get("/research/jobs")
+def research_list_jobs():
+    from ta.research import default_queue
+
+    queue = default_queue()
+    jobs = queue.list(status=request.args.get("status"),
+                      limit=int(request.args.get("limit", 100)))
+    return jsonify({
+        "summary": queue.summary(),
+        "jobs": [
+            {k: job.get(k) for k in
+             ("_id", "market", "source", "interval", "family", "status",
+              "submitted_at", "finished_at", "error", "headline")}
+            for job in jobs
+        ],
+    })
+
+
+@app.get("/research/jobs/<job_id>")
+def research_get_job(job_id: str):
+    from ta.research import default_queue
+
+    job = default_queue().get(job_id)
+    if job is None:
+        return jsonify({"error": f"no job {job_id}"}), 404
+    return jsonify(job)
+
+
+@app.get("/research/results")
+def research_results():
+    """Every finished run, newest first — the comparison table.
+
+    Reads the cache directly rather than the job list, so results submitted
+    by the CLI or an earlier process show up here too.
+    """
+    from ta.cache import default_cache
+    from ta.research import JOB_NAME
+
+    cache = default_cache()
+    family = request.args.get("family")
+    rows = []
+    for doc in cache.runs.find({"job": JOB_NAME}).sort("created_at", -1).limit(200):
+        detail = doc.get("params_detail", {})
+        if family and detail.get("family") != family:
+            continue
+        headline = doc.get("payload", {}).get("headline", {})
+        if request.args.get("full"):
+            rows.append({"params": detail, "payload": doc.get("payload")})
+        else:
+            rows.append({"params": detail, "headline": headline})
+    return jsonify({"count": len(rows), "results": rows, "cache": cache.stats()})
+
+
+@app.post("/research/shadow/record")
+def research_shadow_record():
+    """Take one shadow observation now, for every watched market."""
+    from ta.configclient import ConfigManagerClient
+    from ta.research.shadow import default_store, observe_all, watchlist_from_env
+
+    watchlist = watchlist_from_env()
+    if not watchlist:
+        return jsonify({"error": "SHADOW_MARKETS is not set"}), 400
+    try:
+        client = ConfigManagerClient()
+    except Exception:
+        client = None
+    return jsonify(observe_all(watchlist, store=default_store(), config_client=client))
+
+
+@app.get("/research/shadow")
+def research_shadow_status():
+    """Coverage and the most recent observations."""
+    from ta.research.scheduler import default_scheduler
+    from ta.research.shadow import default_store, watchlist_from_env
+
+    store = default_store()
+    scheduler = default_scheduler()
+    markets = store.markets()
+    recent = {}
+    for market, source in markets:
+        rows = store.rows(market, source)
+        recent[f"{market}/{source}"] = {
+            "observations": len(rows),
+            "latest": {
+                k: rows[-1].get(k)
+                for k in ("bar_time", "tilt", "mid", "implied_target_base",
+                          "live_target_base", "live_config_version")
+            } if rows else None,
+        }
+    return jsonify({
+        "watchlist": [
+            f"{entry[0]}/{entry[1]}"
+            + (f" (config: {entry[2]})" if len(entry) > 2 and entry[2] != entry[0] else "")
+            for entry in watchlist_from_env()
+        ],
+        "total_observations": store.count(),
+        "markets": recent,
+        "scheduler": scheduler.status() if scheduler else "not configured",
+    })
+
+
+@app.get("/research/shadow/score")
+def research_shadow_score():
+    """Live-sampled estimate, against the backtest it has to justify."""
+    from ta.research.shadow import default_store, score
+
+    store = default_store()
+    market, source = request.args.get("market"), request.args.get("source")
+    targets = [(market, source)] if market and source else store.markets()
+    return jsonify({
+        f"{m}/{s}": score(store.rows(m, s)) for m, s in targets
+    })
+
+
 @app.get("/analysis")
 def get_analysis_endpoint():
     """Combined snapshot for one market: indicators and/or analyses.

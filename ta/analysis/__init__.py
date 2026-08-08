@@ -1,9 +1,9 @@
 """Non-indicator analyses: structured verdicts over one OHLCV frame.
 
 Each module exposes `run(frame, **params) -> AnalysisResult`. The registry
-here is deliberately just a dict -- three analyses do not need the machinery
-indicators do, and their function signatures serve as their param schemas
-(validated by `call_with_loose_params`).
+here is deliberately just a dict -- a handful of analyses do not need the
+machinery indicators do, and their function signatures serve as their param
+schemas (validated by `call_with_loose_params`).
 """
 
 from __future__ import annotations
@@ -11,13 +11,15 @@ from __future__ import annotations
 import pandas as pd
 
 from ..errors import ParamError
-from . import regime, trend, volatility
+from . import levels, regime, tilt, trend, volatility
 from .types import AnalysisResult, call_with_loose_params
 
 ANALYSES = {
     "volatility": volatility.run,
     "trend": trend.run,
     "regime": regime.run,
+    "tilt": tilt.run,
+    "levels": levels.run,
 }
 
 

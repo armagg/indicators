@@ -57,7 +57,12 @@ def test_save_path_calls_store(stub_data, monkeypatch):
         "USDTIRT", "nobitex", "1H", indicators="rsi", save=True
     )
     assert snapshot["saved"] == 123
-    assert calls == {"symbol": "USDTIRT", "source": "nobitex", "interval": "1H"}
+    assert calls == {
+        "symbol": "USDTIRT",
+        "source": "nobitex",
+        "interval": "1H",
+        "latest_bar_only": False,
+    }
 
 
 def test_forming_bar_is_dropped(monkeypatch):

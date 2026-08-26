@@ -7,6 +7,10 @@ which is the point: tests must not depend on Mongo.
 
 from __future__ import annotations
 
+import os
+
+os.environ.setdefault("SNAPSHOT_DISABLE", "1")
+
 import numpy as np
 import pandas as pd
 import pytest

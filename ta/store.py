@@ -54,13 +54,21 @@ def param_hash(params: Mapping[str, Any]) -> str:
 
 
 def docs_for(
-    result: ComputeResult, *, symbol: str, source: str, interval: str
+    result: ComputeResult,
+    *,
+    symbol: str,
+    source: str,
+    interval: str,
+    latest_bar_only: bool = False,
 ) -> list[dict]:
     """Build the documents for one compute result. Pure -- no Mongo here.
 
     Rows where every output column is NaN (the warmup-masked head of the
     series) are skipped: a document that says "we know nothing about this
     bar" is storage spent making queries slower.
+
+    `latest_bar_only` keeps just the last timestamp. The always-on snapshot
+    writer uses it so an hourly tick does not rewrite the whole warmup window.
     """
     by_request: dict[str, list] = {}
     for meta in result.columns:
@@ -75,6 +83,8 @@ def docs_for(
         params = metas[0].params
         digest = param_hash(params)
         sub = result.frame[columns]
+        if latest_bar_only and not result.frame.empty:
+            sub = sub.loc[[result.frame.index[-1]]]
         for ts, row in sub.iterrows():
             values = {
                 column: (None if pd.isna(value) else float(value))
@@ -125,13 +135,20 @@ def save(
     source: str,
     interval: str,
     collection=None,
+    latest_bar_only: bool = False,
 ) -> int:
     """Upsert every non-empty bar of `result`. Returns the document count.
 
     `collection` is injectable for tests; by default the env-configured
     `indicators_data` collection is used.
     """
-    docs = docs_for(result, symbol=symbol, source=source, interval=interval)
+    docs = docs_for(
+        result,
+        symbol=symbol,
+        source=source,
+        interval=interval,
+        latest_bar_only=latest_bar_only,
+    )
     if not docs:
         return 0
 

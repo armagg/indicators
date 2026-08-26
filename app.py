@@ -12,6 +12,9 @@ The old endpoint mixed candles from every venue that traded the market name
 
 from __future__ import annotations
 
+import logging
+import os
+
 from flask import Flask, jsonify, request
 
 import ta
@@ -338,6 +341,57 @@ def get_analysis_endpoint():
         include_series=series,
     )
     return jsonify(snapshot), 200
+
+
+@app.get("/snapshot")
+def get_snapshot_endpoint():
+    """Latest stored TA snapshot. Never computes — Mongo + short cache only."""
+    source = request.args.get("source")
+    market = request.args.get("market") or request.args.get("symbol")
+    interval = request.args.get("interval")
+    if not source or not market or not interval:
+        return jsonify({"error": "source, market, and interval are required"}), 400
+
+    from ta.snapshot import read_snapshot
+
+    payload = read_snapshot(source, market, interval)
+    if payload is None:
+        return (
+            jsonify(
+                {
+                    "error": "no snapshot",
+                    "source": source,
+                    "market": market,
+                    "interval": interval,
+                }
+            ),
+            404,
+        )
+    return jsonify(payload), 200
+
+
+def _autostart_snapshot_writer() -> None:
+    if os.environ.get("SNAPSHOT_DISABLE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return
+    if (
+        os.environ.get("FLASK_DEBUG") == "1"
+        and os.environ.get("WERKZEUG_RUN_MAIN") != "true"
+    ):
+        return
+    try:
+        from ta.snapshot import default_scheduler
+
+        default_scheduler()
+    except Exception as exc:
+        logging.getLogger("ta.snapshot").warning("snapshot writer not started: %s", exc)
+
+
+_autostart_snapshot_writer()
 
 
 if __name__ == "__main__":

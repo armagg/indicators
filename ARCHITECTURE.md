@@ -83,6 +83,36 @@ Rules:
 4. Every apply records the base version and the resulting version, so any
    change this project made can be traced and rolled back.
 
+## Always-on snapshots (risk consumer, approved 2026-08-26)
+
+Risk-aggregator **reads** indicators from this service. It does not
+recompute them. That requires a writer that is always on, and a read path
+that does not hit OHLC.
+
+- **Universe:** markets with `is_enable=true` in config-manager.
+- **Cadence:** after each closed **1H** bar. Extra **15Min** only for the
+  FX tapes `USDTRLS` / `USDTIRR` / `USDTTMN`.
+- **Set (fixed, do not expand without approval):** `rsi:14`, `stoch_rsi`
+  (14/3/3), `macd` 12/26/9, `volume_zscore`, `volume_sma`, `natr`, plus
+  analyses `volatility`, `trend`, `regime`.
+- **Store:** existing `indicators_data` natural-key upserts, plus a
+  latest-analysis document per `(source, market, interval)` for the
+  verdict scalars (`vol_percentile`, …).
+- **Read:** `GET /snapshot?source=&market=&interval=` returns the latest
+  stored row from Mongo, with a short in-process cache. **Never computes.**
+  If `computed_at` is older than two bars, the payload is marked stale;
+  the caller (risk) fail-softs — it does not invent numbers.
+- Nobitex public volume is a sampled tape (20 trades/poll). Volume
+  indicators are z-score / SMA vs own history only, never absolute or
+  cross-venue.
+- MACD is in price units and is **not** comparable across assets; risk
+  should prefer `natr` / `vol_percentile` for cross-book stress.
+- This path does **not** write config-manager. Approval-gated overlays
+  stay a separate product.
+
+Hourly TA will not see a 10-minute FX jump. That stays `crypto_price`
+`jump_score`. TA is the slower regime.
+
 ## Overlay allowlist
 
 Fields the project may propose. Anything not listed is out of bounds, and
@@ -312,14 +342,19 @@ READ (unrestricted)
   config-manager GET /config/market/{source}/ ─► current state + tier view
 
 OWN STORE
-  Mongo: indicators_data, ta_proposals, ta_decisions, ta_market_tiers
+  Mongo: indicators_data, ta_analysis_latest, ta_proposals, ta_decisions,
+         ta_market_tiers
                                                 (CH later if volume needs it)
+
+READ API FOR RISK (no compute)
+  GET /snapshot ──► latest stored indicators + analysis scalars
 
 WRITE (single gated path)
   proposal → human approval → config-manager PUT /config/market/{src}/{mkt}
 
 NEVER
-  market_maker runtime code · Kafka · exchange APIs · autonomous writes
+  market_maker runtime code · Kafka · exchange APIs · autonomous MM writes
+  · recomputing indicators inside risk-aggregator
 ```
 
 Only `ta/proposals/apply.py` may perform the write. Nothing else in the

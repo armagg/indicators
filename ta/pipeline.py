@@ -54,6 +54,7 @@ def run(
     drop_forming: bool = True,
     include_records: bool = False,
     include_series: bool = False,
+    latest_bar_only: bool = False,
 ) -> dict[str, Any]:
     """Fetch once, compute everything, return one JSON-ready snapshot.
 
@@ -98,7 +99,11 @@ def run(
             snapshot["indicators"]["records"] = result.to_records()
         if save:
             snapshot["saved"] = store.save(
-                result, symbol=market, source=source, interval=interval
+                result,
+                symbol=market,
+                source=source,
+                interval=interval,
+                latest_bar_only=latest_bar_only,
             )
 
     if analysis_requests:

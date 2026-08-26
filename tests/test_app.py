@@ -142,3 +142,49 @@ def test_shadow_endpoints_survive_the_three_field_watchlist(client, monkeypatch)
 
     score = client.get("/research/shadow/score")
     assert score.status_code == 200
+
+
+def test_snapshot_requires_source_market_interval(client):
+    assert client.get("/snapshot").status_code == 400
+    assert client.get("/snapshot?source=nobitex&market=USDTRLS").status_code == 400
+
+
+def test_snapshot_is_read_only_and_404_when_missing(client, monkeypatch):
+    def boom(*_a, **_k):
+        raise AssertionError("GET /snapshot must not compute")
+
+    monkeypatch.setattr("ta.pipeline.run", boom)
+    monkeypatch.setattr("ta.ohlc.read_ohlc", boom)
+    monkeypatch.setattr("ta.snapshot.read_snapshot", lambda *_a, **_k: None)
+    response = client.get("/snapshot?source=nobitex&market=USDTRLS&interval=1H")
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "no snapshot"
+
+
+def test_snapshot_returns_stored_payload(client, monkeypatch):
+    def boom(*_a, **_k):
+        raise AssertionError("GET /snapshot must not compute")
+
+    monkeypatch.setattr("ta.pipeline.run", boom)
+
+    def fake_read(source, market, interval, **_k):
+        return {
+            "source": source,
+            "market": market,
+            "ohlc_market": "USDTIRT",
+            "interval": interval,
+            "asof": "2026-08-26T11:00:00+00:00",
+            "computed_at": "2026-08-26T11:01:00+00:00",
+            "stale": False,
+            "indicators": {"rsi_14": 55.0, "natr_14": 1.2},
+            "analyses": {"volatility": {"scalars": {"vol_percentile": 0.4}}},
+            "dropped_forming_bar": True,
+        }
+
+    monkeypatch.setattr("ta.snapshot.read_snapshot", fake_read)
+    response = client.get("/snapshot?source=nobitex&market=USDTRLS&interval=1H")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["stale"] is False
+    assert body["indicators"]["rsi_14"] == 55.0
+    assert body["ohlc_market"] == "USDTIRT"

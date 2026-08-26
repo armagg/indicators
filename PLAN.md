@@ -345,6 +345,11 @@ This is the part that wants a human view before anything ships.
 
 ## Next steps — precise specs
 
+- [x] **Always-on hourly snapshots + `GET /snapshot`** (desk 2026-08-26,
+      root PLAN **R4**). Writer over enabled markets; 15Min extra on FX
+      tapes. `GET /snapshot` reads Mongo + short cache, never computes.
+      Does not auto-PUT MM config. Shipped germany-2 `ta-research`.
+
 - [x] **9. Shadow mode for the tilt** — DONE 2026-07-31, now collecting.
       `ta/analysis/tilt.py` (registered analysis, `sma_20_30` -> tilt in
       [-1,1], plus `implied_target_base` anchored on the band midpoint so a

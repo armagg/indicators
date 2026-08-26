@@ -82,3 +82,15 @@ def test_save_upserts_on_natural_key(result):
     first = [op._filter for op in fake.batches[0]]
     second = [op._filter for op in fake.batches[1]]
     assert first == second
+
+
+def test_latest_bar_only_keeps_one_timestamp_per_request(result):
+    all_docs = store.docs_for(result, symbol="USDTIRT", source="nobitex", interval="1H")
+    tail = store.docs_for(
+        result, symbol="USDTIRT", source="nobitex", interval="1H", latest_bar_only=True
+    )
+    last = result.frame.index[-1]
+    assert tail
+    assert {d["time"] for d in tail} == {last.to_pydatetime()}
+    assert len(tail) < len(all_docs)
+    assert {d["analysis"] for d in tail} <= {d["analysis"] for d in all_docs}

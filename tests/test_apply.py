@@ -178,7 +178,11 @@ def test_server_errors_surface_as_source_errors():
 
 
 def test_put_sends_the_inner_config_without_server_keys(client):
-    client.put_market("nobitex", "USDTIRT", {**SETTINGS, "price_max_spread": 0.02})
+    client.put_market(
+        "nobitex",
+        "USDTIRT",
+        {**SETTINGS, "price_max_spread": 0.02, "disable_buy": True},
+    )
     method, url, body = client.transport.writes[0]
 
     assert method == "PUT"
@@ -186,6 +190,7 @@ def test_put_sends_the_inner_config_without_server_keys(client):
     assert body["price_max_spread"] == 0.02
     assert body["market_id"] == "42"  # whole document, not a patch
     assert not (SERVER_OWNED & set(body))  # version/timestamp never sent back
+    assert "disable_buy" not in body
 
 
 # -------------------------------------------------------------------- diff

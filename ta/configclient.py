@@ -51,6 +51,9 @@ from .errors import SourceError
 #: Keys config-manager owns and injects into the stored config. Stripped on
 #: read; never included in a write.
 SERVER_OWNED = frozenset({"version", "timestamp", "_id"})
+RISK_OWNED = frozenset({
+    "disable_buy", "disable_sell", "sell_to_l0", "buy_size_scale",
+})
 
 DEFAULT_TIMEOUT = 10.0
 
@@ -178,7 +181,10 @@ class ConfigManagerClient:
         defaults rather than keeping its current value, which is why callers
         must compose onto a freshly-read config rather than sending a subset.
         """
-        payload = {k: v for k, v in settings.items() if k not in SERVER_OWNED}
+        payload = {
+            k: v for k, v in settings.items()
+            if k not in SERVER_OWNED and k not in RISK_OWNED
+        }
         status, body = self.transport.request(
             "PUT", self._url(source, market), body=payload
         )

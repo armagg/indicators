@@ -155,6 +155,60 @@ per bar against `sma_20_30`'s 0.034, which is the difference between an
 edge of ~0.43bp and ~10bp per unit of inventory moved. The statistically
 better signal is the economically unusable one.
 
+### Addendum — predictor search (2026-08-30)
+
+Desk asked for anything injectable that beats `sma_20_30`. Full panel
+15,494 1H bars (nobitex `USDTIRT` Jul 2024 – 29 Aug 2026), consecutive-bar
+`evaluate()`, OOS 70/30 and last 90d. Canvas:
+`canvases/usdtirt-predictor-search.canvas.tsx`.
+
+**Ship this, not a model.** Blend `sma_20_30` with a 6-hour EWMA of
+`log(nobitex) − log(ramzinex)` (fade: local cheap → hold more). Same
+`normalize_signal`, equal weight, same `inventory_tilt` → `target_base`
+path. Fair value stays `crypto_price`. Do not replace the quote mid.
+
+| signal | excess | t full | t OOS | t 90d | turnover | bp / unit moved |
+|---|---|---|---|---|---|---|
+| `sma_20_30` (step 9) | 0.359 | 2.51 | 1.76 | 1.85 | 0.034 | 10.4 |
+| gap ewma6 fade | 0.829 | 5.35 | 3.14 | 1.70 | 0.053 | 15.6 |
+| **sma + gap ewma6** | **0.747** | **6.40** | **3.56** | **2.60** | **0.042** | **17.7** |
+
+Same-bar venue gap is louder (ramzinex t=13.2, bitpin t=18.9, last-90d
+still ~4) and **already in the quote blend**. Turnover 0.22/hour is too
+fast for `target_base`. Lag-1 ramzinex is almost dead (t=3.65, 90d 0.94)
+— the injectable piece is the *remaining* live gap, slowed.
+
+**Crash brake (separate from the standing lean).** ≥2% BTCUSDT 1H dump:
+next USDT hour +19 bp vs +0.8 buy-hold (n=55; last 90d n=3). Standing
+`−BTC` tilt is dead recently (t=−0.15). Idiosyncratic USDT dumps (top
+decile, BTC quiet): next hour still down (−6.7 bp, n=325), recovered by
+hour 12. Same shape as daily support-break. Overlay: stop *raising*
+`target_base` for 1–4 hours; do not short.
+
+**Rejected (do not re-research without new data):**
+
+- Walk-forward ridge / HGB / LightGBM — higher t, worse last-90d bp/move.
+  GPU unused; 15k hourly rows are CPU.
+- `jump_score`, fair-value `momentum_term`, `prediction_logs` (6 weeks of
+  CH only) — t ≈ 0 or the wrong sign.
+- TOD / Friday seasonality — died last 90d.
+- LLM-on-news — no labels, GDELT unreachable. TGJU is scrapeable live
+  from germany-2; that is a build, not a backtest.
+- 15m wick-fade (`volz_dir`, %B, Donchian) — real, too fast for inventory.
+  Don't-chase on quote centre, not `target_base`.
+- MA25/100 — last 90d t=−0.22.
+
+**P&L honesty, current bands (2026-08-30):** point estimate at cap 0.30 is
+~6 USDT/yr nobitex (`USDTRLS` 4–67) and ~58 ramzinex (`USDTIRR` 6–601).
+Cap 0.15 is half. 24–26 Jul 2026 was −372 bp; one avoided crash day is a
+year of this tilt. Nobitex price skew is still legacy ~5 bp; ramzinex
+USDTIRR is the inventory-skew A/B **control** (~2 bp) — do not change its
+skew to harvest this. Size skew 0.35 still sees `q`.
+
+**Code implication for step 11:** `ta/analysis/tilt.py` must emit the
+blend before the first live write, and shadow must use the same formula.
+Do not go live on `sma_20_30` alone now that this exists.
+
 ### How this would change what the market maker does
 
 It does not change the spread, the ladder, or the number of orders. It moves
@@ -412,8 +466,15 @@ This is the part that wants a human view before anything ships.
 - [ ] **11. First live tilt, one market, small**
 
   USDTIRT on nobitex only. Cap at ±15% of band for the first month — half
-  the proposed default. Full flow: analysis → proposal with the shadow
-  evidence attached → approval → dry-run → `--write`. Then leave it alone.
+  the proposed default. Signal is the 2026-08-30 blend (`sma_20_30` +
+  ewma6 venue-gap fade), **not** `sma_20_30` alone — change `tilt.py` and
+  the shadow writer first so live and shadow cannot disagree. Full flow:
+  analysis → proposal with the shadow evidence attached → approval →
+  dry-run → `--write`. Then leave it alone.
+
+  Do not touch ramzinex `USDTIRR` skew (A/B control). Crash brake
+  (≥2% BTC 1H or idiosyncratic USDT dump → freeze raises of `target_base`
+  1–4h) is a follow-up overlay, not this step.
 
 - [ ] **12. Did it work?**
 
@@ -520,9 +581,14 @@ This is the part that wants a human view before anything ships.
 
 ## Options after step 12 (each needs explicit approval)
 
+- **Crash-brake overlay** (specified 2026-08-30, not in step 11). On a
+  ≥2% BTCUSDT 1H dump or an idiosyncratic USDT dump, stop raising
+  `target_base` for 1–4 hours. Higher left-tail EV than the standing lean
+  at today's bands.
 - **Widen the tilt to a second market.** Only BTCIRT showed any hint
   (`volz_dir` p=0.065); the MA tilt is null there. Do not assume the
-  USDT result transfers — re-run the shadow step per market.
+  USDT result transfers — re-run the shadow step per market. Do not
+  widen onto ramzinex `USDTIRR` while it is the skew A/B control.
 - **Revisit `volz_dir` as a quote-skew signal rather than an inventory
   one.** It is statistically the strongest thing found (p=0.000 on both
   venues) and was rejected only on turnover. If it were expressed as a

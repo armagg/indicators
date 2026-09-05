@@ -122,6 +122,34 @@ def test_nobitex_config_name_maps_to_irt_candles():
     assert sibling_market("ramzinex", "USDTIRR") is None
 
 
+def test_wallex_config_name_maps_to_irt_candles():
+    """The bug this fixes: every wallex market was dark.
+
+    market-data-collector rewrites wallex TMN->IRT on ingest
+    (exchanges/wallex.py:75), but the trading config asks for *TMN. Only
+    nobitex had a translation, so every wallex candle read came back empty and
+    the whole venue produced no snapshots -- which risk-aggregator then read as
+    "no volatility risk". Verified against the store 2026-09-05: wallex ETHTMN
+    = 0 docs, wallex ETHIRT = 693,292.
+    """
+    assert ohlc_market("wallex", "ETHTMN") == "ETHIRT"
+    assert ohlc_market("wallex", "USDTTMN") == "USDTIRT"
+    assert sibling_market("wallex", "ETHTMN") == "ETHIRT"
+    assert sibling_market("wallex", "ETHIRT") == "ETHTMN"
+
+
+def test_ramzinex_is_deliberately_not_renamed():
+    """A blanket normalise-to-IRT would break the venue that works.
+
+    ramzinex's collector keeps the config name verbatim, so its candles really
+    are stored as *IRR (ETHIRR = 525,282 docs, ETHIRT = 0). The suffix map is
+    per-source for this reason; ramzinex must stay absent from it.
+    """
+    assert ohlc_market("ramzinex", "ETHIRR") == "ETHIRR"
+    assert ohlc_market("ramzinex", "BTCIRR") == "BTCIRR"
+    assert sibling_market("ramzinex", "ETHIRR") is None
+
+
 def test_fx_tapes_get_15min_everyone_else_hourly_only():
     assert extra_15min("USDTRLS") and extra_15min("USDTIRR") and extra_15min("USDTTMN")
     assert extra_15min("USDTIRT")

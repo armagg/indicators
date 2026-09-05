@@ -68,25 +68,52 @@ STALE_BARS = 2
 LATEST_COLLECTION = "ta_analysis_latest"
 
 
-def ohlc_market(source: str, config_market: str) -> str:
-    """Candle name for a trading-config name.
+# Quote-suffix rename applied by market-data-collector ON INGEST, per source.
+# The trading config and the candle store disagree about the name of the same
+# book, and they disagree DIFFERENTLY per venue, so this cannot be a single
+# global rule -- verified against the store 2026-09-05:
+#
+#   nobitex   config ETHRLS  ->  stored ETHIRT   (881,811 docs)   rename
+#   wallex    config ETHTMN  ->  stored ETHIRT   (693,292 docs)   rename
+#   ramzinex  config ETHIRR  ->  stored ETHIRR   (525,282 docs)   NO rename
+#
+# ramzinex is the reason a blanket "normalise everything to IRT" is wrong: its
+# collector keeps the config name verbatim (exchanges/ramzinex.py parse_trades),
+# while wallex rewrites TMN->IRT (exchanges/wallex.py:75) and nobitex arrives as
+# IRT already. Mapping ramzinex too would break the one venue that works.
+#
+# A missing entry here is not a crash. It is a silent empty candle read, which
+# is how EVERY wallex market went dark: config asked for ETHTMN, the store held
+# ETHIRT, `no candles` was raised per market, and the whole venue was absent
+# from TA for as long as nobody looked. If you add a venue, add it here.
+_OHLC_SUFFIX: dict[str, tuple[str, str]] = {
+    "nobitex": ("RLS", "IRT"),
+    "wallex": ("TMN", "IRT"),
+    # ramzinex: intentionally absent -- stored under the config name.
+}
 
-    nobitex MM configs are *RLS; market-data-collector writes *IRT.
-    Looking up USDTRLS in OHLC is a silent empty read, not an error.
-    """
-    if source == "nobitex" and config_market.endswith("RLS"):
-        return config_market[:-3] + "IRT"
+
+def ohlc_market(source: str, config_market: str) -> str:
+    """Candle name for a trading-config name."""
+    rename = _OHLC_SUFFIX.get(source)
+    if rename is None:
+        return config_market
+    config_suffix, candle_suffix = rename
+    if config_market.endswith(config_suffix):
+        return config_market[: -len(config_suffix)] + candle_suffix
     return config_market
 
 
 def sibling_market(source: str, market: str) -> str | None:
-    """The other nobitex name for the same book, or None."""
-    if source != "nobitex":
+    """The other name for the same book on this source, or None."""
+    rename = _OHLC_SUFFIX.get(source)
+    if rename is None:
         return None
-    if market.endswith("RLS"):
-        return market[:-3] + "IRT"
-    if market.endswith("IRT"):
-        return market[:-3] + "RLS"
+    config_suffix, candle_suffix = rename
+    if market.endswith(config_suffix):
+        return market[: -len(config_suffix)] + candle_suffix
+    if market.endswith(candle_suffix):
+        return market[: -len(candle_suffix)] + config_suffix
     return None
 
 
@@ -403,10 +430,13 @@ def capture_enabled(
             failures[source] = f"{type(exc).__name__}: {exc}"
             logger.warning("snapshot list_markets %s failed: %s", source, exc)
             continue
+        source_attempted = 0
+        source_failed = 0
         for mc in markets:
             if not mc.is_enabled:
                 continue
             for interval in intervals_for(mc.market):
+                source_attempted += 1
                 key = f"{source}/{mc.market}/{interval}"
                 try:
                     result = capture_one(
@@ -421,12 +451,35 @@ def capture_enabled(
                     )
                 except Exception as exc:
                     failures[key] = f"{type(exc).__name__}: {exc}"
+                    source_failed += 1
                     logger.warning("snapshot %s failed: %s", key, exc)
                     continue
                 if result.get("status") == "skipped":
                     skipped.append(result)
                 else:
                     recorded.append(result)
+
+        # A WHOLE VENUE GOING DARK MUST NOT LOOK LIKE A FEW BAD MARKETS.
+        #
+        # Every wallex snapshot failed on every cycle for an unknown length of
+        # time, and the only trace was one WARNING per market per run, mixed in
+        # with the healthy venues' output. Downstream, risk-aggregator read the
+        # resulting 404s as "no volatility risk", so the venue was not merely
+        # missing from TA -- it was silently exempt from a risk control.
+        #
+        # Total failure of a source is a different event from a market or two
+        # erroring, and it is logged as one.
+        if source_attempted and source_failed == source_attempted:
+            failures[f"{source}/*"] = (
+                f"ALL {source_attempted} snapshot(s) failed"
+            )
+            logger.error(
+                "snapshot source %s is DARK: all %d market/interval "
+                "combination(s) failed -- consumers will see no TA for this "
+                "venue at all, which reads downstream as no risk",
+                source,
+                source_attempted,
+            )
 
     return {
         "recorded": recorded,

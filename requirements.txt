@@ -1,5 +1,22 @@
-Flask==3.1.0
-numpy==2.3.5
-pandas==2.3.3
-pymongo==4.10.1
+Flask==3.1.3
+numpy==2.5.4
+pandas==3.0.6
+pymongo==4.19.0
 python-decouple==3.8
+
+# --- transitive, pinned against tested behaviour ---
+# pandas 3 defaults to datetime64[us] for ISO-built timestamps rather than
+# datetime64[ns]; ta/research/shadow.py forces ns explicitly before taking an
+# integer view of the index, and tests/test_shadow.py pins that.
+blinker==1.9.0
+click==8.5.0
+dnspython==2.9.0
+itsdangerous==2.2.0
+Jinja2==3.1.6
+MarkupSafe==3.0.4
+packaging==26.3
+python-dateutil==2.9.0.post0
+pytz==2026.5
+six==1.17.0
+tzdata==2026.5
+Werkzeug==3.1.9

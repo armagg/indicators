@@ -213,7 +213,15 @@ def score(rows: Sequence[Mapping[str, Any]], *, cadence_sec: float = 3600.0) -> 
     fwd = forward_returns(mids, 1)
     # Only score pairs one cadence apart; a gap means the service was down
     # and the "next" row is hours later.
-    gaps = np.diff(times.view("int64")) / 1e9
+    #
+    # Force nanoseconds before taking the integer view. DatetimeIndex.view(
+    # "int64") returns the dtype's own unit, and pandas 3 no longer defaults to
+    # datetime64[ns]: a Timestamp built from an ISO string is [us] there, so the
+    # same expression yields microseconds (1000x smaller). Every gap would then
+    # miss the cadence window, no pair would score, and this function would
+    # report "not enough observations" forever instead of failing loudly.
+    # as_unit("ns").asi8 is unit-explicit and identical on pandas 2 and 3.
+    gaps = np.diff(times.as_unit("ns").asi8) / 1e9
     adjacent = np.concatenate([np.abs(gaps - cadence_sec) <= 0.25 * cadence_sec, [False]])
     scored_fwd = np.where(adjacent, fwd, np.nan)
 

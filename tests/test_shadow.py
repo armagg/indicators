@@ -269,6 +269,29 @@ def test_score_calls_the_proposal_dead_when_below_the_backtest_floor():
     assert out["live_excess_bps"] < 0
 
 
+def test_cadence_gap_is_measured_in_seconds_not_in_dtype_units():
+    """Guard the datetime->integer conversion in score().
+
+    DatetimeIndex.view("int64") returns the dtype's own unit. pandas 2 builds
+    Timestamps as datetime64[ns]; pandas 3 keeps the resolution of the input,
+    so an ISO-string timestamp is [us] and the identical expression returns a
+    number 1000x smaller. That silently misses every cadence window: no pair
+    scores and the estimate reads "not enough observations" forever. Pin the
+    seconds semantics directly so a revert fails on any pandas version.
+    """
+    times = pd.DatetimeIndex([
+        pd.Timestamp("2026-07-31T00:00:00Z"),
+        pd.Timestamp("2026-07-31T01:00:00Z"),
+    ])
+    gaps_sec = np.diff(times.as_unit("ns").asi8) / 1e9
+    assert gaps_sec == pytest.approx([3600.0])
+
+    # ... and that score() actually treats a one-hour cadence as adjacent.
+    out = score(make_rows(300))
+    assert out["scored"] > 0
+    assert out["dropped_gap_pairs"] == 0
+
+
 # ------------------------------------------------------------ scheduler
 
 

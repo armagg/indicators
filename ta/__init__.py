@@ -1,22 +1,4 @@
-"""`ta` -- the technical-analysis toolkit for this repo.
-
-Library first, HTTP second (ARCHITECTURE.md): everything here is importable
-and pure; `app.py` is a thin adapter over this surface, and batch jobs should
-import this package directly rather than going through HTTP.
-
-Typical use:
-
-    import ta
-
-    result = ta.compute(candles, "rsi, macd, atr, bbands:window=20")
-    result.frame          # OHLCV + indicator columns
-    result.latest()       # last value of every indicator column
-    result.meta()         # frame health, warmup, per-column provenance
-
-`candles` is anything with OHLCV in it -- a DataFrame, or the list of dicts a
-Mongo cursor yields. See `ta.ohlc.read_ohlc` for the source-aware reader and
-`ta.store.save` for idempotent persistence of results.
-"""
+"""`ta` -- the technical-analysis toolkit for this repo: library first, HTTP second."""
 
 from .engine import (
     ComputeResult,

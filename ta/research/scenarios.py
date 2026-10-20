@@ -1,16 +1,4 @@
-"""Named batches of runs, saved in code.
-
-The point of naming them: a comparison is only worth anything if it is
-reproducible, and a comparison assembled from a shell loop typed at the
-time is not — six months later nobody can say which markets were in it or
-whether the gap control was on. A scenario is versioned with the code, so
-re-running it later means the same thing it meant before.
-
-`consecutive_only` is on by default everywhere here, deliberately. Sparse
-candle series make a forward return span a variable amount of wall-clock
-time, and every activity-correlated signal is then partly measuring the
-clock rather than direction. It is a control, not a tuning knob.
-"""
+"""Named batches of runs, saved in code so a comparison stays reproducible."""
 
 from __future__ import annotations
 

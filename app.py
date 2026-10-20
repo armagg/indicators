@@ -1,14 +1,4 @@
-"""Thin HTTP adapter over the `ta` package.
-
-Two endpoints and no business logic: `GET /indicators` is the machine-readable
-catalogue, `GET /indicator` computes (and by default persists) indicators for
-one market. Everything interesting lives in `ta/`; this file only translates
-query strings and exceptions.
-
-Breaking change from the legacy service, on purpose: `source` is now required.
-The old endpoint mixed candles from every venue that traded the market name
-(ARCHITECTURE.md, data contract). Existing callers must add `&source=...`.
-"""
+"""Thin Flask HTTP adapter over the `ta` package; all logic lives in `ta/`."""
 
 from __future__ import annotations
 

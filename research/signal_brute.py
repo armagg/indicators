@@ -1,14 +1,4 @@
-"""CLI over `ta.research.run_brute` — the same code path the service uses.
-
-    python -m research.signal_brute --market USDTIRT --source nobitex \
-        --interval 15Min --family volume
-
-    python -m research.signal_brute --scenario usdt-cross-venue
-
-For anything more than a one-off, prefer the service: it keeps a durable
-queue and does not pay container startup per job. See `/research/*` in
-`app.py`.
-"""
+"""CLI over `ta.research.run_brute` -- the same code path the service uses."""
 
 from __future__ import annotations
 

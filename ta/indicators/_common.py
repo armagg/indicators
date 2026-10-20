@@ -1,10 +1,4 @@
-"""Shared math and warmup helpers for the indicator library.
-
-Deliberately no third-party TA dependency. `pandas_ta` was already dropped once
-here (no Python 3.14 wheel) and TA-Lib needs a C toolchain in the image; both
-are heavy prices to pay for arithmetic that fits in a few hundred lines and
-that we want to be able to read when a number looks wrong.
-"""
+"""Shared math and warmup helpers for the indicator library, with no third-party TA dependency."""
 
 from __future__ import annotations
 
@@ -67,14 +61,7 @@ def rolling_sum(series: pd.Series, window: int) -> pd.Series:
 
 
 def safe_ratio(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
-    """Divide, mapping division by zero to NaN rather than +/-inf.
-
-    Zero denominators are not exotic here: a flat 14-bar window on an illiquid
-    IRT pair makes `highest - lowest` exactly 0 for Stochastic and Williams %R,
-    and a bar with no down-ticks makes RSI's average loss 0. `inf` would then
-    propagate through every later smoothing step and destroy the rest of the
-    series; NaN stays local to the bar that earned it.
-    """
+    """Divide, mapping division by zero to NaN rather than +/-inf."""
     return numerator / denominator.replace(0.0, np.nan)
 
 
@@ -87,11 +74,7 @@ def frame(index: pd.Index, **columns: pd.Series) -> pd.DataFrame:
 
 
 def bars_per_year(index: pd.DatetimeIndex, default: float = 365 * 24 * 60) -> float:
-    """Estimate how many bars of this frame's interval fit in a year.
-
-    Crypto trades continuously, so this is plain calendar time -- no 252-day
-    equity convention.
-    """
+    """Estimate how many bars of this frame's interval fit in a year."""
     if len(index) < 2:
         return default
     deltas = index.to_series().diff().dropna().dt.total_seconds()

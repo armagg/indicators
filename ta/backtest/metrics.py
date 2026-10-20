@@ -1,18 +1,4 @@
-"""Scoring a simulated run.
-
-PnL is mark-to-market and fee-aware: realized cash plus inventory valued at
-the final close, minus every fee paid. Inventory is *not* assumed to be
-liquidated at the end -- a strategy that ends the window holding a large
-position has not earned that position's paper value, so `inventory_value` is
-reported separately from `realized_cash` rather than being quietly folded in.
-
-The markout deserves its own note. Scoring a fill at the moment it happens
-always flatters a market maker: you bought below the reference, so it looks
-instantly profitable. What matters is where the price is some time *later* --
-if it kept falling, that fill was adverse selection wearing a spread's
-clothing. This desk's established honest horizon is ~600 seconds, which is
-why `MARKOUT_HORIZONS_SEC` leads with it.
-"""
+"""Scoring a simulated run: fee-aware mark-to-market PnL plus markouts."""
 
 from __future__ import annotations
 
@@ -60,13 +46,7 @@ class Fill:
 def markouts(
     fills: Sequence[Fill], prices: pd.Series, horizons=MARKOUT_HORIZONS_SEC
 ) -> dict[str, float | None]:
-    """Mean markout in basis points, per horizon and per side.
-
-    Positive means the fill was on the right side of where price went: a buy
-    followed by a rise, or a sell followed by a fall. Fills too close to the
-    end of the window to reach a horizon are skipped rather than clamped to
-    the last bar, which would bias every long horizon toward zero.
-    """
+    """Mean markout in basis points, per horizon and per side."""
     out: dict[str, float | None] = {}
     if not fills or prices.empty:
         return {f"markout_{h}s_bps": None for h in horizons}

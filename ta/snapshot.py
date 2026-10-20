@@ -1,26 +1,4 @@
-"""Always-on TA snapshots for risk. Compute here; GET /snapshot never does.
-
-Risk-aggregator reads this service. It does not recompute RSI/MACD/vol.
-That only works if a writer is always on, and the read path never touches
-OHLC. Architecture (approved 2026-08-26):
-
-- Universe: config-manager markets with is_enable=true.
-- Cadence: each closed 1H bar. Extra 15Min only for the FX tapes
-  USDTRLS / USDTIRR / USDTTMN (USDTIRT is the nobitex candle name for
-  the same USDTRLS book).
-- Set is fixed: rsi:14, stoch_rsi 14/3/3, macd 12/26/9, volume_zscore,
-  volume_sma, natr, plus analyses volatility / trend / regime.
-- Store: indicators_data natural-key upsert of the last closed bar, plus
-  one latest-analysis document per (source, market, interval).
-- Read: Mongo + a short in-process cache. If computed_at is older than
-  two bars, the payload is marked stale. The caller fail-softs.
-
-This path does not write config-manager.
-
-Nobitex candles are *IRT; trading configs are *RLS. Snapshots are keyed
-by the config name so risk can look up USDTRLS. OHLC is fetched under
-the IRT alias. GET /snapshot accepts either name.
-"""
+"""Always-on TA snapshots for risk. Compute here; GET /snapshot never does."""
 
 from __future__ import annotations
 

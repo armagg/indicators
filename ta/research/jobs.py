@@ -1,26 +1,4 @@
-"""A durable job queue with in-process workers.
-
-The service accepts jobs, runs them in the background, and hands back
-results — instead of a container being started and torn down per task.
-
-Two design choices worth stating:
-
-**Jobs live in Mongo, not in memory.** A queue that dies with the process
-loses the record of what was asked, which on a multi-hour sweep is the
-expensive part. On startup, jobs left `running` by a previous process are
-marked `interrupted` rather than silently retried: a half-finished run whose
-outcome nobody observed should be visible as such, not quietly resurrected.
-
-**Workers are threads, few of them.** The heavy work is numpy, which
-releases the GIL, so threads get real parallelism without a second process
-to supervise. The count is deliberately small — this box also runs
-production services, and a research sweep must never be the reason the
-collector falls behind.
-
-Deduplication: an identical job that is already queued or running is not
-enqueued twice; the existing job's id comes back instead. Combined with the
-result cache, submitting the same scenario repeatedly is cheap and safe.
-"""
+"""A durable job queue with in-process workers, backed by Mongo and deduplicated by job identity."""
 
 from __future__ import annotations
 

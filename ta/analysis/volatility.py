@@ -1,11 +1,4 @@
-"""Volatility analysis: how much is this market moving, and is that unusual?
-
-The last question is the one overlays act on. An annualised number means
-nothing to a spread rule by itself -- 40% is sleepy for BTC and wild for
-USDT/IRT -- so the headline scalar is `vol_percentile`: where current vol
-sits within this frame's *own* history, 0..1. That is directly thresholdable
-and self-calibrating per market.
-"""
+"""Volatility analysis: realized vol, NATR, and the self-calibrating vol percentile."""
 
 from __future__ import annotations
 
@@ -25,19 +18,7 @@ def run(
     window: int = 20,
     natr_period: int = 14,
 ) -> AnalysisResult:
-    """Realized volatility (two estimators), NATR, and the vol percentile.
-
-    - `realized_vol_cc`: close-to-close log-return deviation over `window`
-      bars, annualised, in percent. The workhorse.
-    - `realized_vol_parkinson`: Parkinson's high/low range estimator,
-      annualised percent. More sample-efficient than close-to-close and
-      immune to the sparse-bar problem in a different way (it sees intra-bar
-      range); a large disagreement between the two usually means gappy or
-      broken candles, so we surface both.
-    - `natr`: current Normalized ATR (percent of price).
-    - `vol_percentile`: rank of the latest close-to-close reading within all
-      readings in the frame. This is the overlay input.
-    """
+    """Realized volatility (two estimators), NATR, and the vol percentile."""
     warnings: list[str] = []
     annualiser = np.sqrt(bars_per_year(frame.index))
 

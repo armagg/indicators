@@ -1,17 +1,4 @@
-"""Squeeze regime: Bollinger Bands inside Keltner Channels.
-
-The comparison promised in `ta/indicators/volatility.py`'s Keltner notes.
-Bollinger width is driven by close-to-close variance, Keltner width by ATR
-(intra-bar range); when the bands fit *inside* the channel, closes are moving
-less than the bars' own ranges say they could -- compression that usually
-resolves in an expansion. The classic TTM formulation uses a 1.5x ATR
-channel, so that is the default here (the standalone `keltner` indicator
-keeps its conventional 2.0).
-
-For a market maker the actionable moment is the *release*: the first bar
-where the bands pop back out. That bar starts the expansion you do not want
-to be tightly quoted into.
-"""
+"""Squeeze regime: Bollinger Bands inside Keltner Channels, and the bar that releases it."""
 
 from __future__ import annotations
 

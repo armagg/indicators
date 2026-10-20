@@ -1,18 +1,4 @@
-"""`python -m ta.proposals` -- review and decide on proposals.
-
-    python -m ta.proposals list --status pending
-    python -m ta.proposals show a1b2c3d4e5f6
-    python -m ta.proposals approve a1b2c3d4e5f6 --by omid --note "vol is real"
-    python -m ta.proposals reject  a1b2c3d4e5f6 --by omid
-    python -m ta.proposals apply   a1b2c3d4e5f6              # dry run
-    python -m ta.proposals apply   a1b2c3d4e5f6 --write --by omid
-
-`--by` is mandatory on a decision: an approval with nobody's name on it is
-not an approval. `apply` is a **dry run by default** -- it prints the exact
-before/after diff and writes nothing. Writing requires `--write`, and that
-in turn requires `--by`, so the audit trail records who pushed the button
-as well as who approved.
-"""
+"""`python -m ta.proposals` -- review and decide on proposals; `apply` is a dry run by default."""
 
 from __future__ import annotations
 

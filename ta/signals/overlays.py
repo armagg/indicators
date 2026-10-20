@@ -1,53 +1,4 @@
-"""Overlay mapper: analysis verdicts -> allowlisted MM parameter deltas.
-
-This project is an insight engine: it reads market data, forms a view, and
-*proposes* config changes. Proposals reach `config-manager` only through an
-explicit human approval (see `ta/proposals/`); nothing here writes anywhere.
-Everything in this module is a pure function producing a `ConfigDelta`.
-
-Field semantics mirror `config-manager/models.py` exactly (checked
-2026-07-30 -- do not invent fields). The allowlist has two halves, and the
-split drives how deltas compose:
-
-**Scaling knobs** -- relative, safe to stack. Two independent reasons to
-widen are both real, so multipliers multiply and sensitivities take the max.
-
-- `spread_multiplier` (0, 5]: two-sided scale on the resting grid. The maker
-  computes its band as `price_min_spread x spread_scale` and
-  `price_max_spread x spread_scale` (market_maker.py:956), so this moves
-  *both* ends together and cannot express "widen the far side only".
-- `vol_spread_sensitivity` (>= 0): fast volatility response.
-- `structural_premium` (signed fraction) + `premium_skew_factor` [0, 1]:
-  reference tilt. The premium is inert without the gate, so overlays always
-  emit the pair together.
-- `disable_buy` / `disable_sell`: per-side pause. May be set, never cleared
-  -- the live flags belong to the risk control plane, and a research overlay
-  that re-enabled a manually killed side would be a hazard.
-
-**Absolute knobs** -- they set a value outright, so stacking two different
-proposals is a genuine conflict and `combine` refuses it rather than picking
-a winner.
-
-- `price_min_spread` / `price_max_spread` (fractions): the raw band. These
-  are what "increase the min, or the max, independently" needs; the
-  multiplier above cannot do it.
-- `min_base` / `max_base`: the inventory band. Beyond driving skew, these
-  set each cycle's buy and sell totals (market_maker.py:1338), so `max_base`
-  is the real "how much size do we show in this market" knob.
-- `target_base`: the inventory level the skew treats as neutral. Carries the
-  directional tilt; validated to sit within `[min_base, max_base]` and no
-  further than `DEFAULT_TILT_CAP` (0.30) of half-band from the midpoint.
-- `is_enable`: the per-market switch the maker checks before quoting at all
-  (market_maker.py:423). Deliberately *not* driven by any automatic overlay
-  -- turning a market on or off is a human decision that goes through the
-  proposal flow.
-- `number_of_order_each_sides`: ladder depth per side.
-
-Cross-field invariants (min <= max on both bands, and never proposing a
-minimum spread below break-even) cannot be checked on a delta in
-isolation, because a delta may set only one end. They are enforced in
-`apply_to`, against the resulting config.
-"""
+"""Overlay mapper: analysis verdicts -> allowlisted MM parameter deltas; pure functions, no writes."""
 
 from __future__ import annotations
 
@@ -83,13 +34,7 @@ HIGH_IMPACT_FIELDS = frozenset({"is_enable", "max_base", "number_of_order_each_s
 
 @dataclass(frozen=True)
 class ConfigDelta:
-    """A restricted, validated set of proposed MM parameter changes.
-
-    Only allowlisted fields exist, so an overlay cannot emit anything else
-    even by accident (an unknown kwarg is a TypeError at construction).
-    `None` means "leave the baseline alone". `reason` is audit metadata for
-    the proposal record, not a config field.
-    """
+    """A restricted, validated set of proposed MM parameter changes."""
 
     spread_multiplier: float | None = None
     premium_skew_factor: float | None = None
@@ -175,11 +120,7 @@ class ConfigDelta:
 
     @property
     def is_high_impact(self) -> bool:
-        """True when this delta commits more capital or resumes quoting.
-
-        `is_enable=False` is a de-risking change and does not count; turning
-        a market *on* does.
-        """
+        """True when this delta commits more capital or resumes quoting."""
         touched = self.fields()
         if touched.get("is_enable") is True:
             return True
@@ -194,13 +135,7 @@ class ConfigDelta:
 
 
     def apply_to(self, config: Mapping[str, Any]) -> dict[str, Any]:
-        """Compose this delta onto a baseline config and validate the result.
-
-        Scaling knobs compose (multiplier multiplies, capped; sensitivity
-        takes the max; pauses can only turn on; the premium pair overrides).
-        Absolute knobs are set outright. The resulting config is then checked
-        for the cross-field invariants a single delta cannot see.
-        """
+        """Compose this delta onto a baseline config and validate the result."""
         out = dict(config)
 
         if self.spread_multiplier is not None:
@@ -229,12 +164,7 @@ class ConfigDelta:
 
 
 def _validate_result(config: Mapping[str, Any], delta: ConfigDelta) -> None:
-    """Cross-field checks against a *composed* config.
-
-    Only failures the delta is responsible for are raised: a baseline that
-    already violated an invariant is not this project's to reject, but a
-    proposal that creates or worsens one is.
-    """
+    """Cross-field checks against a *composed* config."""
     min_spread = config.get("price_min_spread")
     max_spread = config.get("price_max_spread")
     if (
@@ -302,12 +232,7 @@ EMPTY = ConfigDelta()
 
 
 def combine(*deltas: ConfigDelta) -> ConfigDelta:
-    """Fold several overlay outputs into one delta.
-
-    Scaling knobs stack. Absolute knobs must agree: two proposals naming
-    different `max_base` values is a real disagreement, and silently keeping
-    one would hide it, so it raises. Reasons concatenate for the audit trail.
-    """
+    """Fold several overlay outputs into one delta."""
     active = [d for d in deltas if not d.is_empty]
     if not active:
         return EMPTY
@@ -355,20 +280,14 @@ def combine(*deltas: ConfigDelta) -> ConfigDelta:
 
 @dataclass(frozen=True)
 class OverlayContext:
-    """What an overlay may see: analysis verdicts, the clock, and the config
-    it is proposing against.
-
-    `config` is required by any overlay that sets an absolute field -- you
-    cannot propose a new `price_max_spread` without knowing the current one.
-    """
+    """What an overlay may see: analysis verdicts, the clock, and the config it is proposing against."""
 
     analyses: Mapping[str, AnalysisResult]
     asof: datetime | None = None
     config: Mapping[str, Any] | None = None
 
     def get(self, name: str) -> AnalysisResult | None:
-        """Find a result by analysis name, tolerating parameterised keys
-        (`trend:slow=100`) the pipeline produces."""
+        """Find a result by analysis name, tolerating parameterised keys."""
         result = self.analyses.get(name)
         if result is not None:
             return result
@@ -394,15 +313,7 @@ class OverlayContext:
 def vol_widen(
     ctx: OverlayContext, *, threshold: float = 0.75, cap: float = 2.5
 ) -> ConfigDelta:
-    """Widen both edges of the grid when volatility is high *for this market*.
-
-    Linear ramp on `vol_percentile`: 1.0x at `threshold`, `cap`x at 1.0.
-    Uses the percentile rather than an absolute volatility number, so one
-    setting works across USDTIRT and BTCIRT without per-market tuning.
-
-    This is the blunt instrument -- it moves the near and far edges together.
-    Use `band_widen` when you want to move one edge only.
-    """
+    """Widen both edges of the grid when volatility is high *for this market*."""
     if not 0.0 <= threshold < 1.0:
         raise ParamError(f"threshold must be in [0, 1), got {threshold}")
     if cap < 1.0:
@@ -428,20 +339,7 @@ def band_widen(
     max_bump: float = 2.0,
     min_bump: float = 1.0,
 ) -> ConfigDelta:
-    """Push the *far* edge of the grid out on volatility, holding the near edge.
-
-    The asymmetric version of `vol_widen`, and the reason the raw band fields
-    are on the allowlist. Raising `price_max_spread` alone deepens the ladder
-    into the tail without giving up the near-touch queue position that earns
-    the spread in normal conditions -- something `spread_multiplier` cannot
-    express, since it scales both edges at once.
-
-    `min_bump` > 1.0 moves the near edge too. Left at 1.0 (default) the near
-    edge is untouched and the delta names only `price_max_spread`.
-
-    Requires `ctx.config`: these are absolute fields, so the current band has
-    to be known before a new one can be proposed.
-    """
+    """Push the *far* edge of the grid out on volatility, holding the near edge."""
     if not 0.0 <= threshold < 1.0:
         raise ParamError(f"threshold must be in [0, 1), got {threshold}")
     if max_bump < 1.0 or min_bump < 1.0:
@@ -486,17 +384,7 @@ def band_widen(
 def size_down(
     ctx: OverlayContext, *, threshold: float = 0.90, floor_ratio: float = 0.5
 ) -> ConfigDelta:
-    """Shrink the size shown in a market when volatility goes extreme.
-
-    Lowers `max_base`, which sets each cycle's buy total and caps the sell
-    total (market_maker.py:1338) -- so this is "quote this market smaller"
-    rather than "quote it wider". The two are different defences: widening
-    prices the risk, sizing down limits how much of it you can take on.
-
-    Never lifts `min_base`, and never reduces below `floor_ratio` of the
-    current `max_base`, so a market cannot be sized into irrelevance by a
-    single spike.
-    """
+    """Shrink the size shown in a market when volatility goes extreme."""
     if not 0.0 <= threshold < 1.0:
         raise ParamError(f"threshold must be in [0, 1), got {threshold}")
     if not 0.0 < floor_ratio <= 1.0:
@@ -540,19 +428,7 @@ def trend_tilt(
     max_tilt_bps: float = 15.0,
     skew_gate: float = 0.5,
 ) -> ConfigDelta:
-    """Tilt the quoting reference a few bp in the direction of a real trend.
-
-    Emits the (`structural_premium`, `premium_skew_factor`) pair together --
-    the premium is inert without the gate. The premium ramps linearly from 0
-    at `min_score` to `max_tilt_bps` at |trend_score| = 1, signed with the
-    trend, so the ladder centres slightly ahead of where the market is going
-    instead of symmetrically around where it was.
-
-    Note: this *overrides* any calibrated structural_premium already on the
-    market. That is intended -- the question being asked is whether the TA
-    tilt would have helped -- but it means results are not additive with the
-    live calibrator's premium.
-    """
+    """Tilt the quoting reference a few bp in the direction of a real trend."""
     if not 0.0 <= min_score < 1.0:
         raise ParamError(f"min_score must be in [0, 1), got {min_score}")
     if not 0.0 < max_tilt_bps <= _MAX_STRUCTURAL_PREMIUM * 1e4:
@@ -579,18 +455,7 @@ def trend_tilt(
 
 
 def inventory_tilt(ctx: OverlayContext, *, cap: float = DEFAULT_TILT_CAP) -> ConfigDelta:
-    """Move `target_base` with the approved SMA tilt, capped from the midpoint.
-
-    Uses the `tilt` analysis (`sma_20_30` -> tilt in [-1, +1]) and the same
-    `implied_target_base` math as shadow mode, so a live proposal cannot
-    disagree with what the shadow table recorded for the same bar. Cap
-    defaults to the standing allowlist ceiling (30% of half-band); step 11's
-    first live month uses 15% by passing `cap=0.15`.
-
-    Requires `ctx.config` with `min_base` / `max_base`. Emits nothing when the
-    tilt is missing, the band is unusable, or the implied target already
-    matches what is live (including the unset-target / midpoint case).
-    """
+    """Move `target_base` with the approved SMA tilt, capped from the midpoint."""
     if not 0.0 < cap <= DEFAULT_TILT_CAP:
         raise ParamError(
             f"cap must be in (0, {DEFAULT_TILT_CAP}] (allowlist ceiling), got {cap}"
@@ -634,13 +499,7 @@ def inventory_tilt(ctx: OverlayContext, *, cap: float = DEFAULT_TILT_CAP) -> Con
 def squeeze_brace(
     ctx: OverlayContext, *, widen: float = 1.5, pause_adverse_side: bool = False
 ) -> ConfigDelta:
-    """Brace for expansion on the bar a volatility squeeze releases.
-
-    The release bar is where a passive quoter is most likely to be run over:
-    compression has just resolved into a directional expansion. Widen for
-    that bar; optionally stop quoting the side the expansion eats (an upward
-    release lifts asks, so pause the sell side, and mirror for downward).
-    """
+    """Brace for expansion on the bar a volatility squeeze releases."""
     if widen < 1.0:
         raise ParamError(f"widen must be >= 1.0, got {widen}")
 
@@ -670,11 +529,7 @@ OVERLAYS = {
 
 
 def evaluate(ctx: OverlayContext, specs) -> ConfigDelta:
-    """Run a set of overlays and combine their deltas.
-
-    `specs` accepts the engine's request shapes, so an overlay stack can live
-    in one string: `"vol_widen:threshold=0.8,cap=3, band_widen, trend_tilt"`.
-    """
+    """Run a set of overlays and combine their deltas."""
     from ..engine import parse_requests
 
     deltas = []

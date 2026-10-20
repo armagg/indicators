@@ -1,13 +1,4 @@
-"""Signal families: how a raw indicator becomes a directional inventory tilt.
-
-Each family returns `{name: tilt_array}` where the tilt is normalized to
-[-1, 1] and is knowable at the close of the bar it is stamped on. Adding a
-family here makes it available to the CLI, the HTTP service, and every
-saved scenario at once.
-
-Series are fetched through `ta.cache.compute_cached`, so an indicator is
-computed once ever per dataset and read from Mongo thereafter.
-"""
+"""Signal families: how a raw indicator becomes a directional inventory tilt in [-1, 1]."""
 
 from __future__ import annotations
 
@@ -55,15 +46,7 @@ def ma_signals(frame, dataset, cache, refresh):
 
 
 def volume_signals(frame, dataset, cache, refresh):
-    """Flow indicators, each turned into a directional tilt.
-
-    Not every volume indicator is directional. `obv`, `ad` and `vpt` are
-    cumulative series whose *level* is an artifact of where the frame starts,
-    so only their slope carries information -- they are differenced here
-    rather than used raw. `mfi` is centred on 50, `cmf` already sits on zero.
-    `volume_zscore` says how much is trading, not which way, so it is used as
-    a magnitude on the close's own direction.
-    """
+    """Flow indicators, each turned into a directional tilt."""
     requests = ["obv", "ad", "vpt"]
     for period in VOLUME_PERIODS:
         requests += [
@@ -105,16 +88,7 @@ MACD_SETS = ((12, 26, 9), (8, 21, 5), (5, 35, 5), (19, 39, 9))
 
 
 def broad_signals(frame, dataset, cache, refresh):
-    """Ten different indicators, each swept over periods.
-
-    Chosen to span the categories rather than to pile up variants of one
-    idea: an RSI and a Stochastic disagree far less than an RSI and an ADX,
-    and a grid full of near-duplicates inflates the best-of-grid statistic
-    without adding any independent evidence.
-
-    Each is turned into a signed tilt around its own neutral point -- 50 for
-    the 0-100 oscillators, 0.5 for %B, zero for the ones already centred.
-    """
+    """Ten different indicators, each swept over periods."""
     requests: list[str] = []
     for period in BROAD_PERIODS:
         requests += [

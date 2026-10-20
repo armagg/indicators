@@ -1,20 +1,4 @@
-"""The market tier list -- this project's own opinion about which markets
-belong in production.
-
-ARCHITECTURE's posture: **major markets are enabled, everything else is
-disabled by default.** Smaller markets carry more risk (thinner books,
-wider gaps, sparser candles, less trustworthy volume), so the burden of
-proof is on turning one *on*.
-
-The tier list is deliberately *not* derived from data. An automatic ranker
-that decides which markets to run was considered and rejected: liquidity
-metrics inform the decision, they do not make it. What lives here is a human
-judgement, stored so the view can hold live config up against it and say
-where the two disagree.
-
-Unknown markets are `other`. That is the safe default -- a market nobody has
-classified is not one to be quoting size in.
-"""
+"""The market tier list -- this project's own opinion about which markets belong in production."""
 
 from __future__ import annotations
 
@@ -73,8 +57,7 @@ class TierStore:
     def set(
         self, source: str, market: str, tier: str, *, by: str, note: str = ""
     ) -> dict:
-        """Classify a market. `by` is recorded -- tiering is a judgement, and
-        judgements have authors."""
+        """Classify a market. `by` is recorded -- tiering is a judgement, and judgements have authors."""
         if not by or not str(by).strip():
             raise ParamError("setting a tier requires an identity")
         doc = {

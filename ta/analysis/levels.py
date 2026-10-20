@@ -1,13 +1,4 @@
-"""Support and resistance: static swing pivots plus dynamic channel levels.
-
-Static levels are confirmed fractal pivots on high/low, clustered when they
-sit within a few basis points of each other, then classified relative to the
-last close. Dynamic levels reuse Donchian / Bollinger / Keltner / VWAP from
-the indicator library — this module does not reimplement band math.
-
-Insight only: no overlay, no ConfigDelta, no proposal. The desk question is
-"where is price relative to structure", not "which MM knob to turn".
-"""
+"""Support and resistance: static swing pivots plus dynamic channel levels. Insight only -- no overlay, no proposal."""
 
 from __future__ import annotations
 
@@ -32,8 +23,7 @@ def _find_swing_pivots(
     left: int,
     right: int,
 ) -> list[dict]:
-    """Williams-style fractal pivots. Confirmed only once `right` bars exist
-    after the candidate, so the last `right` bars never emit a pivot."""
+    """Williams-style fractal pivots, confirmed only once `right` later bars exist."""
     n = len(high)
     pivots: list[dict] = []
     if n < left + right + 1:
@@ -68,11 +58,7 @@ def _cluster_pivots(
     cluster_bps: float,
     last_bar: int,
 ) -> list[dict]:
-    """Merge pivots whose prices sit within `cluster_bps` of the cluster mean.
-
-    Kind is provisional here (pivot origin); final support/resistance is
-    assigned from last close after clustering.
-    """
+    """Merge pivots whose prices sit within `cluster_bps` of the cluster mean."""
     if not pivots:
         return []
 
@@ -106,11 +92,7 @@ def _cluster_pivots(
 
 
 def _score_level(touches: int, age_bars: int, dist_bps: float) -> float:
-    """Higher is stronger: more touches, fresher, closer to price.
-
-    Age decays over ~100 bars; distance softens past ~50 bps. Touches dominate
-    so a level that has held three times beats a lonely recent wick.
-    """
+    """Score a level: more touches, fresher, closer to price is stronger."""
     age_factor = 1.0 / (1.0 + age_bars / 100.0)
     dist_factor = 1.0 / (1.0 + abs(dist_bps) / 50.0)
     return float(touches) * age_factor * dist_factor

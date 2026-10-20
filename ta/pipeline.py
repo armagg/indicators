@@ -1,28 +1,4 @@
-"""One market in, one combined snapshot out.
-
-The batch entry point ARCHITECTURE's analyzer model calls for: a single OHLC
-pull feeding many indicators and analyses, instead of one Mongo round-trip
-per indicator (the old service's pattern -- a five-widget dashboard cost five
-identical 500-row reads).
-
-Library call:
-
-    from ta import pipeline
-    snapshot = pipeline.run(
-        "USDTIRT", "nobitex", "1H",
-        indicators="rsi, macd, natr",
-        analyses="volatility, trend, regime",
-    )
-
-CLI (same thing, JSON on stdout):
-
-    python -m ta.pipeline -m USDTIRT -s nobitex -i 1H \
-        --indicators "rsi,macd" --analyses "volatility,trend:slow=100,regime"
-
-The forming last bar is dropped by default (`drop_forming=False` to keep it):
-research snapshots must not be computed on a candle that is still moving --
-that is the repainting trap described in `ta/frame.py`.
-"""
+"""One market in, one combined snapshot out: a single OHLC pull feeding many indicators and analyses."""
 
 from __future__ import annotations
 
@@ -56,12 +32,7 @@ def run(
     include_series: bool = False,
     latest_bar_only: bool = False,
 ) -> dict[str, Any]:
-    """Fetch once, compute everything, return one JSON-ready snapshot.
-
-    `indicators` and `analyses` accept the same shapes as the engine's
-    request parser (compact string, list of strings/dicts). Either may be
-    empty, but not both.
-    """
+    """Fetch once, compute everything, return one JSON-ready snapshot."""
     indicator_requests = parse_requests(indicators)
     analysis_requests = parse_requests(analyses)
     if not indicator_requests and not analysis_requests:

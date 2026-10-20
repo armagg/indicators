@@ -1,12 +1,4 @@
-"""The hourly clock for shadow mode.
-
-A daemon thread inside the service rather than a host cron, so the schedule
-ships with the image and cannot drift out of sync with the code that runs
-on it. It is deliberately dumb: wake, observe, sleep. There is no catch-up
-of missed intervals — a gap in the record is information (the service was
-down), and the scorer already refuses to measure a forward return across
-one. Backfilling would hide exactly the thing worth seeing.
-"""
+"""The hourly clock for shadow mode: a daemon thread inside the service that wakes, observes, sleeps."""
 
 from __future__ import annotations
 

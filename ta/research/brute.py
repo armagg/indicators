@@ -1,15 +1,4 @@
-"""The brute force itself, as a callable — one implementation, three callers.
-
-`run_brute` is what the CLI, the HTTP service, and every saved scenario all
-go through, so a result cannot depend on how it was launched. It returns the
-payload it also stores in the cache, and a cached run is returned without
-recomputing anything.
-
-What it measures is in `ta/signal_value.py`: not "would this rule have made
-money" but "does varying inventory with this signal beat holding the same
-average amount constantly". The distinction is the whole point and is easy
-to lose — see that module before reading any number out of here.
-"""
+"""The brute force itself, as a callable -- one implementation, three callers."""
 
 from __future__ import annotations
 
@@ -49,12 +38,7 @@ def run_brute(
     rerun: bool = False,
     log=None,
 ) -> dict[str, Any]:
-    """Score one family of signals on one market. Returns the run payload.
-
-    `consecutive_only` defaults True: candle series here are sparse, so
-    without it a forward return spans a variable amount of wall-clock time
-    and any activity-correlated signal is partly measuring the clock.
-    """
+    """Score one family of signals on one market. Returns the run payload."""
     say = log or (lambda *a: None)
     if family not in FAMILIES:
         raise FrameError(f"unknown family {family!r}; known: {', '.join(sorted(FAMILIES))}")

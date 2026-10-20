@@ -1,20 +1,4 @@
-"""The compute engine: turn indicator requests into columns, honestly.
-
-Three jobs beyond "call the function":
-
-1. **Batch.** One frame, many indicators, one pass. The old service computed
-   exactly one indicator per HTTP request and refetched the candles each time,
-   so a five-indicator dashboard was five Mongo reads of the same 500 rows.
-
-2. **Warmup.** Every indicator has a stretch at the start of its output that is
-   arithmetically real but analytically worthless. The engine masks it by
-   default. See `WarmupPolicy` below -- this is the part that most TA code
-   gets wrong and it is why indicator values disagree between platforms.
-
-3. **Causality.** Forward-looking indicators are refused unless explicitly
-   allowed, so nothing that reads bar `t+k` can leak into a signal or a
-   backtest by accident.
-"""
+"""The compute engine: batch many requests over one frame, mask warmup, refuse non-causal indicators."""
 
 from __future__ import annotations
 
@@ -41,16 +25,7 @@ class IndicatorRequest:
 
     @classmethod
     def parse(cls, value: "IndicatorRequest | str | Mapping[str, Any]") -> "IndicatorRequest":
-        """Accept every shape a caller might reasonably send.
-
-        - ``IndicatorRequest(...)``
-        - ``"rsi"``
-        - ``"rsi:period=21"`` / ``"macd:fast=8,slow=21,signal=5"`` -- the
-          compact form, so a whole dashboard fits in one query string:
-          ``?indicators=rsi:period=21,ema:window=50,atr``
-        - ``{"name": "rsi", "params": {"period": 21}}``
-        - ``{"name": "rsi", "period": 21}`` -- flat form
-        """
+        """Accept every shape a caller might reasonably send: object, bare name, compact string, or mapping."""
         if isinstance(value, IndicatorRequest):
             return value
         if isinstance(value, str):
@@ -96,13 +71,7 @@ class IndicatorRequest:
 
 
 def parse_requests(value) -> list[IndicatorRequest]:
-    """Parse a collection, or a comma-separated string, of indicator requests.
-
-    Splitting a string is delicate because the compact form uses commas
-    *inside* a request too (``macd:fast=8,slow=21``). A comma starts a new
-    request only when the chunk after it introduces a new indicator name --
-    i.e. it has no ``=`` before any ``:``.
-    """
+    """Parse a collection, or a comma-separated string, of indicator requests."""
     if value is None:
         return []
     if isinstance(value, (str, Mapping, IndicatorRequest)):
@@ -173,12 +142,7 @@ class ComputeResult:
         }
 
     def to_records(self, *, dropna: bool = False) -> list[dict]:
-        """JSON-ready rows, NaN rendered as ``null`` rather than the string 'NaN'.
-
-        `DataFrame.to_json` emits NaN unquoted, which is invalid JSON that some
-        parsers accept and others reject. Going through `object` + `where`
-        keeps it real `null`.
-        """
+        """JSON-ready rows, NaN rendered as ``null`` rather than the string 'NaN'."""
         out = self.frame
         if dropna and not out.empty:
             value_cols = [c.column for c in self.columns if c.column in out.columns]
@@ -203,14 +167,7 @@ class ComputeResult:
         return records
 
     def latest(self) -> dict:
-        """The most recent value of every computed column.
-
-        What a live consumer (the quoter, the gap guard, an alert) actually
-        wants -- and the shape the whole 500-row payload was being used for.
-        Reports the *last non-NaN* value per column with its own timestamp and
-        age in bars, because different indicators go stale at different rates:
-        a masked-out ADX during warmup is not the same as a fresh one.
-        """
+        """The most recent value of every computed column, with timestamp and age in bars."""
         out: dict[str, Any] = {}
         for meta in self.columns:
             col = meta.column
@@ -239,14 +196,7 @@ def compute(
     allow_noncausal: bool = False,
     normalize: bool = True,
 ) -> ComputeResult:
-    """Compute one or many indicators over one OHLCV frame.
-
-    `data` is anything `normalize_ohlcv` accepts. `requests` is anything
-    `parse_requests` accepts.
-
-    Set `normalize=False` only when passing a frame that has already been
-    through `normalize_ohlcv` -- it skips a defensive copy on a hot path.
-    """
+    """Compute one or many indicators over one OHLCV frame."""
     if warmup not in WARMUP_POLICIES:
         raise ParamError(
             f"warmup must be one of {', '.join(WARMUP_POLICIES)}, got {warmup!r}"
@@ -378,11 +328,7 @@ def compute(
 
 
 def compute_series(data, request, **kwargs) -> pd.DataFrame:
-    """Convenience wrapper: just the indicator columns, no OHLCV, no metadata.
-
-    For internal callers (the analysis layer, the backtester) that already
-    trust their input.
-    """
+    """Convenience wrapper: just the indicator columns, no OHLCV, no metadata."""
     kwargs.setdefault("include_ohlcv", False)
     result = compute(data, request, **kwargs)
     return result.frame

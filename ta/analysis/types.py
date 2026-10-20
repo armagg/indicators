@@ -1,14 +1,4 @@
-"""Result type and parameter plumbing shared by all analyses.
-
-An analysis differs from an indicator: an indicator returns columns aligned to
-the frame; an analysis returns a *verdict* -- a handful of scalars, optionally
-some supporting series and events -- that the overlay layer (and a human) can
-act on without re-deriving anything.
-
-Analyses have no Param specs (they are few, and their functions are their own
-schema), so parameters coming off a CLI or query string are coerced loosely
-and validated against the function signature instead of a registry entry.
-"""
+"""Result type and parameter plumbing shared by all analyses."""
 
 from __future__ import annotations
 
@@ -28,16 +18,9 @@ class AnalysisResult:
 
     name: str
     params: dict[str, Any]
-    #: Timestamp of the last bar the verdict is based on (UTC).
     asof: pd.Timestamp | None
-    #: The verdict itself: floats, bools, and short labels. This is what
-    #: overlays read; keep it flat and small.
     scalars: dict[str, Any] = field(default_factory=dict)
-    #: Supporting series for charts/debugging. Excluded from `as_dict` unless
-    #: asked for -- a 1000-row series per analysis would drown the verdict.
     series: dict[str, pd.Series] = field(default_factory=dict)
-    #: Point-in-time occurrences (e.g. squeeze releases), oldest first, each
-    #: `{"time": iso, "event": str, ...}`.
     events: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
@@ -74,11 +57,7 @@ def _clean(value: Any) -> Any:
 
 
 def coerce_loose(value: Any) -> Any:
-    """Best-effort typing for a parameter that has no schema.
-
-    Query strings and argv deliver everything as text; analyses and overlays
-    take real ints/floats/bools. int before float so "30" stays an int.
-    """
+    """Best-effort typing for a parameter that has no schema; int before float."""
     if not isinstance(value, str):
         return value
     text = value.strip()
@@ -100,8 +79,7 @@ def coerce_loose(value: Any) -> Any:
 def call_with_loose_params(
     fn: Callable, supplied: Mapping[str, Any], *args, label: str = ""
 ) -> Any:
-    """Call `fn(*args, **supplied)` with coercion and a friendly unknown-kwarg
-    error instead of a bare TypeError from deep inside Python."""
+    """Call `fn(*args, **supplied)` with coercion and a friendly unknown-kwarg error."""
     label = label or fn.__name__
     accepted = {
         name

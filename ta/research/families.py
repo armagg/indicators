@@ -1,13 +1,4 @@
-"""Signal families: how a raw indicator becomes a directional inventory tilt.
-
-Each family returns `{name: tilt_array}` where the tilt is normalized to
-[-1, 1] and is knowable at the close of the bar it is stamped on. Adding a
-family here makes it available to the CLI, the HTTP service, and every
-saved scenario at once.
-
-Series are fetched through `ta.cache.compute_cached`, so an indicator is
-computed once ever per dataset and read from Mongo thereafter.
-"""
+"""Signal families: how a raw indicator becomes a directional inventory tilt in [-1, 1]."""
 
 from __future__ import annotations
 
@@ -21,10 +12,8 @@ MA_FAST = (3, 5, 8, 10, 15, 20, 30, 50)
 MA_SLOW = (10, 20, 30, 50, 80, 120, 200, 300)
 MA_KINDS = ("ema", "sma")
 
-#: Volume-family periods. Each indicator is swept over these.
 VOLUME_PERIODS = (7, 14, 20, 30, 50, 80, 120)
 
-#: Standing caveat for anything volume-derived on this desk's data.
 VOLUME_CAVEAT = (
     "VOLUME CAVEAT: `volume` here is the sum of trade amounts scraped from "
     "nobitex's public tape, which is capped at 20 records per poll. On a busy "
@@ -57,15 +46,7 @@ def ma_signals(frame, dataset, cache, refresh):
 
 
 def volume_signals(frame, dataset, cache, refresh):
-    """Flow indicators, each turned into a directional tilt.
-
-    Not every volume indicator is directional. `obv`, `ad` and `vpt` are
-    cumulative series whose *level* is an artifact of where the frame starts,
-    so only their slope carries information -- they are differenced here
-    rather than used raw. `mfi` is centred on 50, `cmf` already sits on zero.
-    `volume_zscore` says how much is trading, not which way, so it is used as
-    a magnitude on the close's own direction.
-    """
+    """Flow indicators, each turned into a directional tilt."""
     requests = ["obv", "ad", "vpt"]
     for period in VOLUME_PERIODS:
         requests += [
@@ -88,8 +69,6 @@ def volume_signals(frame, dataset, cache, refresh):
         signals[f"cmf_{period}"] = normalize_signal(columns[f"cmf_{period}"].to_numpy())
         signals[f"mfi_{period}"] = normalize_signal(columns[f"mfi_{period}"].to_numpy() - 50.0)
         signals[f"force_{period}"] = normalize_signal(columns[f"force_index_{period}"].to_numpy())
-        # Volume z-score is unsigned: pair it with the bar's own direction, so
-        # "heavy volume pushing up" and "heavy volume pushing down" differ.
         z = columns[f"volume_zscore_{period}"].to_numpy()
         signals[f"volz_dir_{period}"] = normalize_signal(z * np.sign(bar_return))
         ratio = columns[f"volume_ratio_{period}"].to_numpy()
@@ -103,24 +82,13 @@ def volume_signals(frame, dataset, cache, refresh):
     return signals, report
 
 
-#: Periods swept for every indicator in the `broad` family.
 BROAD_PERIODS = (7, 14, 30, 80)
 
-#: MACD is parameterised by three spans, so it gets its own combinations.
 MACD_SETS = ((12, 26, 9), (8, 21, 5), (5, 35, 5), (19, 39, 9))
 
 
 def broad_signals(frame, dataset, cache, refresh):
-    """Ten different indicators, each swept over periods.
-
-    Chosen to span the categories rather than to pile up variants of one
-    idea: an RSI and a Stochastic disagree far less than an RSI and an ADX,
-    and a grid full of near-duplicates inflates the best-of-grid statistic
-    without adding any independent evidence.
-
-    Each is turned into a signed tilt around its own neutral point -- 50 for
-    the 0-100 oscillators, 0.5 for %B, zero for the ones already centred.
-    """
+    """Ten different indicators, each swept over periods."""
     requests: list[str] = []
     for period in BROAD_PERIODS:
         requests += [
@@ -147,10 +115,8 @@ def broad_signals(frame, dataset, cache, refresh):
         signals[f"rsi_{period}"] = normalize_signal(col[f"rsi_{period}"].to_numpy() - 50.0)
         signals[f"stoch_{period}"] = normalize_signal(col[f"stoch_k_{period}_3"].to_numpy() - 50.0)
         signals[f"cci_{period}"] = normalize_signal(col[f"cci_{period}"].to_numpy())
-        # Williams %R runs -100 (low of range) to 0 (high): neutral is -50.
         signals[f"willr_{period}"] = normalize_signal(col[f"williams_r_{period}"].to_numpy() + 50.0)
         signals[f"roc_{period}"] = normalize_signal(col[f"roc_{period}"].to_numpy())
-        # ADX measures strength without direction; DI+ minus DI- supplies it.
         signals[f"di_{period}"] = normalize_signal(
             col[f"di_plus_{period}"].to_numpy() - col[f"di_minus_{period}"].to_numpy()
         )

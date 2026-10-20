@@ -1,27 +1,4 @@
-"""The gated apply: the only path in this project that changes a live config.
-
-Everything else in `ta` reads, computes, or proposes. This module is the
-single door, and it is deliberately narrow:
-
-1. Refuse anything that is not `APPROVED`. Not pending, not "obviously
-   fine", not high-urgency. The state machine in `lifecycle.py` is the
-   authority and this re-checks it rather than trusting the caller.
-2. Re-read the live config **now**, not when the proposal was made. Approval
-   and apply are separated by human time, and the crypto_price calibrators
-   write these same documents on their own schedule.
-3. If the version moved since `base_version`, mark the proposal `stale` and
-   stop. The delta was reasoned against a config that no longer exists;
-   applying it would silently revert whatever the calibrator just decided.
-4. Compose onto the freshly-read config, then verify that **only allowlisted
-   fields changed**. This is the guard against a subtler failure than a bad
-   delta: `PUT` replaces the whole document, so a field accidentally dropped
-   between read and write would be silently reset to its schema default. The
-   diff is computed and checked precisely so that cannot happen unnoticed.
-5. Write, and record both the version we based on and the version we got.
-
-Dry run is the default everywhere, including the CLI. Writing takes an
-explicit flag.
-"""
+"""The gated apply: the only path in this project that changes a live config. Dry run by default."""
 
 from __future__ import annotations
 
@@ -35,9 +12,6 @@ from . import lifecycle
 from .models import Proposal, Status
 from .store import ProposalStore
 
-#: Fields a proposal is permitted to change. Mirrors `ConfigDelta`'s own
-#: shape -- kept as a set here so the post-composition check can be stated
-#: directly against the wire payload rather than against the delta object.
 ALLOWLIST = frozenset(
     f.name for f in ConfigDelta.__dataclass_fields__.values() if f.name != "reason"
 )
@@ -50,7 +24,6 @@ class ApplyResult:
     proposal: Proposal
     dry_run: bool
     applied: bool
-    #: field -> (before, after), only for fields that actually change.
     diff: dict[str, tuple[Any, Any]] = field(default_factory=dict)
     base_version: int | None = None
     live_version: int | None = None
@@ -125,12 +98,7 @@ def apply(
     dry_run: bool = True,
     actor: str = "system",
 ) -> ApplyResult:
-    """Attempt to apply an approved proposal. Dry run unless told otherwise.
-
-    A dry run never changes the proposal's status -- it is a question, not a
-    step. A real run always ends the proposal in a terminal state
-    (`applied`, `stale`, or `failed`).
-    """
+    """Attempt to apply an approved proposal. Dry run unless told otherwise."""
     if Status(proposal.status) is not Status.APPROVED:
         raise ParamError(
             f"proposal {proposal.id} is {proposal.status}, not approved. "
@@ -144,9 +112,6 @@ def apply(
 
     live = client.get_market(proposal.source, proposal.market)
     if live is None:
-        # A delta describes a change to settings, not a whole market. Creating
-        # a config needs fields (market_id, base, quote, precision...) no
-        # proposal carries, so this is out of scope rather than half-supported.
         raise ParamError(
             f"{proposal.source}/{proposal.market} has no config in config-manager. "
             f"This project modifies existing markets; it cannot create one."
@@ -174,10 +139,6 @@ def apply(
     _assert_only_allowlisted(diff)
 
     if not diff:
-        # The live config already satisfies the proposal -- someone applied
-        # the same change by hand, or a calibrator arrived at it independently.
-        # The desired end state holds, so close the card rather than leaving
-        # an approved proposal sitting in the queue forever.
         result = ApplyResult(
             proposal=checked,
             dry_run=dry_run,
@@ -221,9 +182,6 @@ def apply(
             error=str(exc),
         )
 
-    # The write landed and is versioned server-side. If recording it locally
-    # fails from here, config-manager's own version history is still the
-    # authoritative record of what changed -- nothing is half-written.
     done = lifecycle.mark_applied(checked, result_version=written.version)
     if store is not None:
         store.commit(checked, done, action="apply", actor=actor)

@@ -1,13 +1,4 @@
-"""Support and resistance: static swing pivots plus dynamic channel levels.
-
-Static levels are confirmed fractal pivots on high/low, clustered when they
-sit within a few basis points of each other, then classified relative to the
-last close. Dynamic levels reuse Donchian / Bollinger / Keltner / VWAP from
-the indicator library — this module does not reimplement band math.
-
-Insight only: no overlay, no ConfigDelta, no proposal. The desk question is
-"where is price relative to structure", not "which MM knob to turn".
-"""
+"""Support and resistance: static swing pivots plus dynamic channel levels. Insight only -- no overlay, no proposal."""
 
 from __future__ import annotations
 
@@ -32,8 +23,7 @@ def _find_swing_pivots(
     left: int,
     right: int,
 ) -> list[dict]:
-    """Williams-style fractal pivots. Confirmed only once `right` bars exist
-    after the candidate, so the last `right` bars never emit a pivot."""
+    """Williams-style fractal pivots, confirmed only once `right` later bars exist."""
     n = len(high)
     pivots: list[dict] = []
     if n < left + right + 1:
@@ -42,7 +32,6 @@ def _find_swing_pivots(
     for i in range(left, n - right):
         h_window = high[i - left : i + right + 1]
         l_window = low[i - left : i + right + 1]
-        # Leftmost peak/trough in the window — plateaus still register once.
         if high[i] == h_window.max() and int(np.argmax(h_window)) == left:
             pivots.append(
                 {
@@ -69,11 +58,7 @@ def _cluster_pivots(
     cluster_bps: float,
     last_bar: int,
 ) -> list[dict]:
-    """Merge pivots whose prices sit within `cluster_bps` of the cluster mean.
-
-    Kind is provisional here (pivot origin); final support/resistance is
-    assigned from last close after clustering.
-    """
+    """Merge pivots whose prices sit within `cluster_bps` of the cluster mean."""
     if not pivots:
         return []
 
@@ -107,11 +92,7 @@ def _cluster_pivots(
 
 
 def _score_level(touches: int, age_bars: int, dist_bps: float) -> float:
-    """Higher is stronger: more touches, fresher, closer to price.
-
-    Age decays over ~100 bars; distance softens past ~50 bps. Touches dominate
-    so a level that has held three times beats a lonely recent wick.
-    """
+    """Score a level: more touches, fresher, closer to price is stronger."""
     age_factor = 1.0 / (1.0 + age_bars / 100.0)
     dist_factor = 1.0 / (1.0 + abs(dist_bps) / 50.0)
     return float(touches) * age_factor * dist_factor
@@ -228,7 +209,6 @@ def run(
         else:
             clusters = _cluster_pivots(pivots, cluster_bps, last_bar)
             supports, resistances = _classify_and_rank(clusters, close, max_levels)
-            # Events: strongest levels first, then chronological among the tail.
             ranked = sorted(
                 supports + resistances,
                 key=lambda L: L["strength"],
@@ -236,7 +216,6 @@ def run(
             )
             events = ranked[:_MAX_EVENTS]
 
-    # Nearest = closest in price: highest support below close, lowest resistance above.
     nearest_support = max((s["price"] for s in supports), default=None)
     nearest_resistance = min((r["price"] for r in resistances), default=None)
 
@@ -247,7 +226,6 @@ def run(
         _bps(nearest_resistance, close) if nearest_resistance is not None else None
     )
 
-    # Dynamic levels via registered indicators.
     dynamic_support = None
     dynamic_resistance = None
     series: dict[str, pd.Series] = {}
@@ -273,9 +251,6 @@ def run(
         kc_upper = computed[f"kc_upper_{kc_window}_{kc_atr}_{kc_multiplier}"]
         kc_lower = computed[f"kc_lower_{kc_window}_{kc_atr}_{kc_multiplier}"]
 
-        # Prior-bar Donchian: the live channel includes this bar's own high/low,
-        # so close is always inside it (see donchian indicator notes). Dynamic
-        # S/R and in_range use the confirmed previous channel instead.
         prior_dc_lower = dc_lower.shift(1)
         prior_dc_upper = dc_upper.shift(1)
         dynamic_support = _last(prior_dc_lower)

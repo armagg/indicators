@@ -1,17 +1,4 @@
-"""Squeeze regime: Bollinger Bands inside Keltner Channels.
-
-The comparison promised in `ta/indicators/volatility.py`'s Keltner notes.
-Bollinger width is driven by close-to-close variance, Keltner width by ATR
-(intra-bar range); when the bands fit *inside* the channel, closes are moving
-less than the bars' own ranges say they could -- compression that usually
-resolves in an expansion. The classic TTM formulation uses a 1.5x ATR
-channel, so that is the default here (the standalone `keltner` indicator
-keeps its conventional 2.0).
-
-For a market maker the actionable moment is the *release*: the first bar
-where the bands pop back out. That bar starts the expansion you do not want
-to be tightly quoted into.
-"""
+"""Squeeze regime: Bollinger Bands inside Keltner Channels, and the bar that releases it."""
 
 from __future__ import annotations
 
@@ -21,8 +8,6 @@ import pandas as pd
 from ..engine import compute_series
 from .types import AnalysisResult
 
-#: Events are reported for the tail of the frame only; older releases have
-#: already played out and only bloat the payload.
 _MAX_EVENTS = 20
 
 
@@ -59,8 +44,6 @@ def run(
             "frame shorter than the band/channel warmup: squeeze state unknown"
         )
 
-    # Releases: bars where the previous bar was squeezed and this one is not
-    # (evaluated only where both states are actually known).
     prev_squeeze = squeeze.shift(1, fill_value=False)
     release_mask = prev_squeeze & ~squeeze & known
     events = []
@@ -76,7 +59,6 @@ def run(
     squeeze_on = bool(squeeze.iloc[-1]) if len(squeeze) else False
     released_now = bool(release_mask.iloc[-1]) if len(release_mask) else False
 
-    # Consecutive trailing squeezed bars.
     bars_in_squeeze = 0
     for value in squeeze.iloc[::-1]:
         if not value:

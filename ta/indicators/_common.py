@@ -1,41 +1,11 @@
-"""Shared math and warmup helpers for the indicator library.
-
-Deliberately no third-party TA dependency. `pandas_ta` was already dropped once
-here (no Python 3.14 wheel) and TA-Lib needs a C toolchain in the image; both
-are heavy prices to pay for arithmetic that fits in a few hundred lines and
-that we want to be able to read when a number looks wrong.
-"""
+"""Shared math and warmup helpers for the indicator library, with no third-party TA dependency."""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-# --------------------------------------------------------------------------
-# Warmup
-# --------------------------------------------------------------------------
-#
-# Two different things get called "warmup" and conflating them is why the same
-# indicator reads differently on two charts.
-#
-# *Window* indicators (SMA, Bollinger, Donchian) have a hard boundary: before
-# bar N the output is NaN, from bar N it is exactly right. Warmup = N.
-#
-# *Recursive* indicators (EMA, and everything built on one -- RSI, MACD, ATR,
-# ADX, TSI) have no such boundary. `adjust=False` seeds the recursion with the
-# first observation and every later value still contains a fraction of that
-# seed. The output is non-NaN long before it is correct.
-#
-# The seed's residual weight after k bars is (1 - alpha)^k. We call it settled
-# once that drops below 5%:
-#
-#     k > ln(0.05) / ln(1 - alpha)  ~=  3 / alpha
-#
-# For Wilder smoothing (alpha = 1/period) that is the familiar "3x the period"
-# rule of thumb -- a 14-period RSI wants ~42 bars, not 14. For a span-n EMA
-# (alpha = 2/(n+1)) it is ~1.5 * (n+1).
 
-#: Residual weight of the seed value at which a recursion is called settled.
 SEED_TOLERANCE = 0.05
 
 
@@ -54,11 +24,6 @@ def ema_warmup(span: int) -> int:
 def wilder_warmup(period: int) -> int:
     """Warmup for Wilder smoothing (alpha = 1/period). ~3x the period."""
     return alpha_warmup(1.0 / period)
-
-
-# --------------------------------------------------------------------------
-# Moving averages used as building blocks
-# --------------------------------------------------------------------------
 
 
 def sma(series: pd.Series, window: int) -> pd.Series:
@@ -95,20 +60,8 @@ def rolling_sum(series: pd.Series, window: int) -> pd.Series:
     return series.rolling(window=window, min_periods=window).sum()
 
 
-# --------------------------------------------------------------------------
-# Numerics
-# --------------------------------------------------------------------------
-
-
 def safe_ratio(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
-    """Divide, mapping division by zero to NaN rather than +/-inf.
-
-    Zero denominators are not exotic here: a flat 14-bar window on an illiquid
-    IRT pair makes `highest - lowest` exactly 0 for Stochastic and Williams %R,
-    and a bar with no down-ticks makes RSI's average loss 0. `inf` would then
-    propagate through every later smoothing step and destroy the rest of the
-    series; NaN stays local to the bar that earned it.
-    """
+    """Divide, mapping division by zero to NaN rather than +/-inf."""
     return numerator / denominator.replace(0.0, np.nan)
 
 
@@ -121,11 +74,7 @@ def frame(index: pd.Index, **columns: pd.Series) -> pd.DataFrame:
 
 
 def bars_per_year(index: pd.DatetimeIndex, default: float = 365 * 24 * 60) -> float:
-    """Estimate how many bars of this frame's interval fit in a year.
-
-    Crypto trades continuously, so this is plain calendar time -- no 252-day
-    equity convention.
-    """
+    """Estimate how many bars of this frame's interval fit in a year."""
     if len(index) < 2:
         return default
     deltas = index.to_series().diff().dropna().dt.total_seconds()

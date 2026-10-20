@@ -1,50 +1,10 @@
-"""A pure mirror of `market_maker`'s quoting math.
-
-Copied, never imported. `market_maker/agent.py` has import-time side effects
-(including a hardcoded SOCKS proxy) and a live loop; pulling any of it into a
-research process would be a hazard. So the formulas live here, and the
-honesty rule from ARCHITECTURE applies: where this diverges from live
-behaviour, the divergence is named rather than smoothed over.
-
-Mirrored faithfully (`market_maker/market_maker.py`, read 2026-07-30):
-
-- `_spread_scale`   -> `spread_scale`      (multiplier x vol response)
-- `_spread_floor`   -> `spread_floor`      (**one** maker fee, see below)
-- `_effective_spreads` -> `effective_spreads` (scale, asymmetry, floor)
-- `compute_delta_spread` -> `level_step`
-- `compute_buy_prices` / `compute_sell_prices` -> `build_ladder`
-- `_inventory_q` / `apply_inventory_skew` -> `inventory_q` / `skew_reference`
-- `apply_premium_skew` -> `premium_reference`
-- order totals from `_order_totals` -> `order_totals`, split equally across
-  levels (live does `buy_total / n_buy`, market_maker.py:1505)
-
-**The fee floor is one maker fee, not two.** Break-even for a round trip
-that buys at `mid - s` and sells at `mid + s` is gross `2s` against
-`2 x maker_fee`, so `s == maker_fee`. `market_maker._spread_floor` carries a
-long comment about the 2x version being a real bug: on nobitex (maker_fee
-9.61bp) it made the floor 19.22bp, above the 15-18bp band where that
-market's expected value peaks, so it silently forbade the best setting
-available.
-
-**Known divergences from live (v1, deliberate):**
-
-- No bypass-wall or penny-jump. Live consults the venue book to step past
-  walls and to undercut a foreign quote by one tick; candles carry no book,
-  so ladder prices here are the pure `ref x (1 +/- spread)` baseline. Live
-  therefore quotes at least as aggressively as this simulator does.
-- No martingale sizing (`martingle_enabled`), no `size_skew_factor`, no
-  adverse cooldown, no OVERPRICED/UNDERPRICE special branches.
-- No tick rounding to `number_of_percision`, no `tolerant` jitter.
-- No latency, rate limits, or cancel/replace races.
-"""
+"""A pure mirror of `market_maker`'s quoting math, with divergences named rather than smoothed over."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-#: Divergences a run report must state. Kept as data so `runner.py` can put
-#: them in every artifact without restating them.
 DIVERGENCES = (
     "no bypass-wall / penny-jump (candles carry no order book): live quotes "
     "at least as aggressively as this simulator",
@@ -69,7 +29,7 @@ def _num(config: Mapping[str, Any], key: str, default: float = 0.0) -> float:
 
 @dataclass(frozen=True)
 class Quote:
-    side: str  # "buy" | "sell"
+    side: str
     level: int
     price: float
     size: float
@@ -118,8 +78,6 @@ def effective_spreads(
 
     asymmetry = _num(config, "spread_asymmetry") * scale
     if asymmetry and side in ("buy", "sell"):
-        # Clamp so the split alone can never push a side under the floor,
-        # which would silently break the mean-preserving property.
         if base_min > fee:
             room = base_min - fee
             asymmetry = max(-room, min(room, asymmetry))
@@ -146,30 +104,13 @@ def level_step(config: Mapping[str, Any], num_orders: int, scale: float = 1.0) -
     return 0.0
 
 
-#: How far outside the band, as a fraction of band width, counts as a full
-#: breach. At 0.25, being a quarter of a band-width past the edge puts the
-#: recovering side at its tightest legal spread.
 DEFAULT_RECOVERY_SPAN = 0.25
 
 
 def effective_band(
     config: Mapping[str, Any], regime: str | None = None
 ) -> tuple[float, float]:
-    """Inventory bounds after the market-state multipliers.
-
-    **This must be computed before any out-of-band logic**, which is the
-    ordering the live maker gets wrong today. `underprice_multiplier` and
-    `overprice_multiplier` are read only by the special buy/sell amount
-    branches (`market_maker.py:1299` and `:1305`); they never reach
-    `_inventory_q`. So while the UNDERPRICE branch is deliberately buying up
-    to `max_base * underprice_multiplier`, the skew still believes the
-    ceiling is `max_base` and reads the position as over-full — the recovery
-    would fight the regime it is supposed to be serving.
-
-    `regime` is supplied by the caller. Detecting it needs the venue price
-    against the reference, which candles do not carry; the simulator models
-    the *consequence* of a regime, not its detection.
-    """
+    """Inventory bounds after the market-state multipliers."""
     min_base = _num(config, "min_base")
     max_base = _num(config, "max_base")
     if regime == "underprice":
@@ -187,16 +128,7 @@ def band_breach(
     effective_max: float,
     span_fraction: float = DEFAULT_RECOVERY_SPAN,
 ) -> tuple[str | None, float]:
-    """How far outside the effective band we are: `(recovering_side, 0..1)`.
-
-    `recovering_side` is the side that would fix the breach — `"buy"` when
-    inventory is below the floor, `"sell"` when above the ceiling. Inside
-    the band it is `None`, so nothing changes for the ordinary case.
-
-    Unlike `inventory_q`, this does not saturate at the edge: it *starts*
-    there. The two are complementary — `inventory_q` leans the grid while
-    inside the band, this one adds urgency once outside it.
-    """
+    """How far outside the effective band we are: `(recovering_side, 0..1)`."""
     width = max(effective_max - effective_min, 0.0)
     span = span_fraction * width
     if span <= 0:
@@ -214,15 +146,7 @@ def recovery_spreads(
     breach: float,
     scale: float = 1.0,
 ) -> tuple[float, float]:
-    """The recovering side's band, tightened toward the fee floor.
-
-    Interpolates from the normal spreads to `spread_floor(config)` as the
-    breach goes 0 -> 1. Because `effective_spreads` has already floored its
-    output at the fee, the interpolation target is never *below* where it
-    starts, so this can tighten to break-even and provably no further — the
-    "much more aggressive, but never through the fee" requirement is a
-    property of the arithmetic, not a check that could be forgotten.
-    """
+    """The recovering side's band, tightened toward the fee floor."""
     min_s, max_s = effective_spreads(config, scale, side=side)
     floor = spread_floor(config)
     if breach <= 0 or floor <= 0:
@@ -234,11 +158,7 @@ def recovery_spreads(
 
 
 def inventory_q(config: Mapping[str, Any], base_balance: float) -> float:
-    """Normalized inventory error in [-1, 1]: 0 at target, +1 at `max_base`.
-
-    `target_base` defaults to the band midpoint; an explicit target makes the
-    normalization asymmetric, each side spanning its own distance to its edge.
-    """
+    """Normalized inventory error in [-1, 1]: 0 at target, +1 at `max_base`."""
     max_base = _num(config, "max_base")
     min_base = _num(config, "min_base")
     target = config.get("target_base")
@@ -259,12 +179,7 @@ def inventory_q(config: Mapping[str, Any], base_balance: float) -> float:
 def skew_reference(
     config: Mapping[str, Any], reference: float, base_balance: float, scale: float = 1.0
 ) -> float:
-    """Shift the grid against inventory so the book mean-reverts the position.
-
-    Prefers `inventory_skew_halfspreads` (shift at full inventory measured in
-    half-spreads, which stays meaningful when the spread is recalibrated) and
-    falls back to the legacy raw-fraction `inventory_skew_factor`.
-    """
+    """Shift the grid against inventory so the book mean-reverts the position."""
     q = inventory_q(config, base_balance)
     halfspreads = _num(config, "inventory_skew_halfspreads")
     if halfspreads > 0:
@@ -311,18 +226,7 @@ def build_ladder(
     recovery: bool = False,
     recovery_span: float = DEFAULT_RECOVERY_SPAN,
 ) -> Ladder:
-    """The full two-sided quote for one instant.
-
-    Order of operations matches live: premium correction is applied to the
-    reference itself, then the inventory skew, then the ladder is built
-    around the skewed reference.
-
-    `recovery=True` adds the proposed out-of-band behaviour (PLAN's skew
-    proposal): the effective band is resolved for `regime` first, and if
-    inventory sits outside it the recovering side tightens toward the fee
-    floor in proportion to the breach. Off by default, because it is a
-    proposal being evaluated, not live behaviour.
-    """
+    """The full two-sided quote for one instant."""
     if reference <= 0:
         return Ladder()
 

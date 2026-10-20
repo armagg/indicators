@@ -1,40 +1,4 @@
-r"""Is a signal worth tilting inventory on?
-
-This desk does not take directional positions. It quotes both sides and is
-therefore *always* holding inventory. So the useful question about any
-signal is not "should I be long or short" -- it is:
-
-    given that I always hold some USDT, should I hold MORE of it when the
-    signal says up, and LESS when it says down?
-
-That is a different question from a strategy backtest, and it has a
-different answer, because of one decomposition that is easy to miss:
-
-    mean(s * r)  =  mean(s) * mean(r)  +  Cov(s, r)
-    \_________/     \______________/     \_______/
-     what a naive     the drift you       the ONLY
-     backtest         would have got      part the
-     reports          from the SAME       signal
-                      average inventory   earns
-
-On a market that trends -- and USDT/IRT ratchets upward as the rial
-devalues -- the first term dominates completely. A rule that happens to sit
-long 70% of the time looks profitable, but a *constant* inventory at that
-same average level would have earned the same drift without the signal, the
-turnover, or the fees. Scoring the naive term is how a backtest convinces
-you a coin-flip has edge.
-
-`Cov(s, r)` is what a market maker actually buys by tilting. It is zero in
-expectation for a worthless signal no matter how strongly the market trends,
-which also makes it the right thing to permutation-test.
-
-Cost note: the fee arithmetic for this is *not* a taker round trip per flip.
-The MM's inventory moves through passive fills it is making anyway; tilting
-changes where the book sits (`target_base`, the inventory skew), not whether
-it trades. The cost of a tilt is adverse selection and opportunity cost, not
-a fresh taker fee -- so a signal too weak to pay for taker flips can still
-be worth having here.
-"""
+"""Is a signal worth tilting inventory on? Scores Cov(signal, return), not naive P&L."""
 
 from __future__ import annotations
 
@@ -43,7 +7,6 @@ from dataclasses import asdict, dataclass
 import numpy as np
 import pandas as pd
 
-#: Crypto trades continuously; annualisation is plain calendar time.
 _SECONDS_PER_YEAR = 365.0 * 24.0 * 3600.0
 
 
@@ -52,23 +15,14 @@ class SignalValue:
     """What tilting inventory on one signal would have earned."""
 
     bars: int
-    #: Correlation of the signal with the return that follows it.
     ic: float
-    #: t-statistic of the mean tilt P&L. |t| > 2 is the usual bar, and it is
-    #: a low bar when the signal was picked out of a large grid.
     ic_t: float
-    #: The number that matters: per-bar excess of a +/-1 inventory tilt over
-    #: holding the same *average* inventory constantly, in basis points.
     excess_bps: float
     excess_ann_pct: float
-    #: mean(s*r) -- what a naive backtest would have printed.
     naive_bps: float
-    #: mean(s)*mean(r) -- the part that is just drift on average exposure.
     drift_bps: float
     mean_signal: float
-    #: Mean |change| in the signal per bar: how much the tilt actually moves.
     turnover: float
-    #: Share of bars where the tilt had the same sign as the return.
     hit_rate: float
 
     def as_dict(self) -> dict:
@@ -76,12 +30,7 @@ class SignalValue:
 
 
 def forward_returns(close, horizon: int = 1) -> np.ndarray:
-    """Log return from bar `t` to bar `t + horizon`, stamped on `t`.
-
-    Stamped on `t` so it lines up with a signal computed from data through
-    `t`. The last `horizon` entries are NaN -- there is no future for them,
-    and filling those would leak the end of the sample into every score.
-    """
+    """Log return from bar `t` to bar `t + horizon`, stamped on `t`."""
     prices = np.asarray(close, dtype="float64")
     with np.errstate(divide="ignore", invalid="ignore"):
         logs = np.log(prices)
@@ -94,20 +43,7 @@ def forward_returns(close, horizon: int = 1) -> np.ndarray:
 def consecutive_mask(
     index: pd.DatetimeIndex, interval_sec: float | None = None, tolerance: float = 0.25
 ) -> np.ndarray:
-    """True on bars whose successor is the very next bar on the nominal grid.
-
-    Candle series here are sparse -- a bar in which nothing traded is not
-    written at all -- so "the next bar" can be fifteen minutes later or three
-    hours later. That turns a forward return into a variable-horizon
-    quantity, and any signal correlated with *activity* is then also
-    correlated with how long its forward return had to run. Volume signals
-    are correlated with activity by construction, which makes this the
-    obvious way to manufacture a volume effect out of nothing.
-
-    Masking to consecutive pairs costs sample size and buys a constant
-    horizon. A signal that survives it is measuring direction; one that does
-    not was partly measuring the clock.
-    """
+    """True on bars whose successor is the very next bar on the nominal grid."""
     if len(index) < 2:
         return np.zeros(len(index), dtype=bool)
     deltas = index.to_series().diff().shift(-1).dt.total_seconds().to_numpy()
@@ -121,14 +57,7 @@ def consecutive_mask(
 
 
 def normalize_signal(values, clip: float = 3.0) -> np.ndarray:
-    """Map an arbitrary signal onto a bounded tilt in [-1, 1].
-
-    Standardised by its own dispersion then squashed, so the result is a
-    *relative* instruction ("hold more than usual") rather than a number
-    whose units depend on the market's price level. Uses the median and MAD
-    rather than mean and standard deviation: one repricing day would
-    otherwise set the scale for the whole sample.
-    """
+    """Map an arbitrary signal onto a bounded tilt in [-1, 1]."""
     x = np.asarray(values, dtype="float64")
     finite = x[np.isfinite(x)]
     if finite.size == 0:
@@ -143,14 +72,7 @@ def normalize_signal(values, clip: float = 3.0) -> np.ndarray:
 
 
 def evaluate(signal, forward, *, bar_seconds: float | None = None) -> SignalValue | None:
-    """Score one signal against the returns that followed it.
-
-    Both arrays are stamped on the same bars: `signal[t]` must be knowable
-    at the close of bar `t`, and `forward[t]` is what happened next. Rows
-    where either is NaN are dropped, which is what removes indicator warmup.
-
-    Returns None when too little overlaps to say anything.
-    """
+    """Score one signal against the returns that followed it."""
     s = np.asarray(signal, dtype="float64")
     r = np.asarray(forward, dtype="float64")
     if len(s) != len(r):
@@ -163,7 +85,7 @@ def evaluate(signal, forward, *, bar_seconds: float | None = None) -> SignalValu
 
     naive = float(np.mean(s * r))
     drift = float(np.mean(s) * np.mean(r))
-    excess = naive - drift  # == population Cov(s, r)
+    excess = naive - drift
 
     tilt_pnl = (s - s.mean()) * r
     deviation = float(np.std(tilt_pnl))
@@ -197,18 +119,7 @@ def evaluate(signal, forward, *, bar_seconds: float | None = None) -> SignalValu
 def permutation_pvalue(
     best_excess: float, signals: list[np.ndarray], forward: np.ndarray, *, trials: int = 100, seed: int = 7
 ) -> dict:
-    """How often a grid this size finds `best_excess` on data with no signal.
-
-    The returns are shuffled, which destroys any relationship with the
-    signals while preserving their distribution. Crucially the null for
-    `excess` is centred on zero however hard the market trends -- unlike a
-    naive P&L null, which a strong drift inflates until everything looks
-    significant.
-
-    Shuffling also destroys autocorrelation, so this is the *optimistic*
-    null: a block bootstrap would be stricter. A result that fails here
-    fails outright.
-    """
+    """How often a grid this size finds `best_excess` on data with no signal."""
     rng = np.random.default_rng(seed)
     r = np.asarray(forward, dtype="float64")
     finite = np.isfinite(r)

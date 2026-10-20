@@ -1,19 +1,4 @@
-"""Trend analysis: direction and strength, folded into one actionable score.
-
-Reuses registered indicators via the engine (never reimplements their math):
-ADX for strength, and three direction votes -- fast/slow EMA relationship,
-close vs KAMA, DI+ vs DI-. Votes are *continuous* in [-1, +1], scaled by how
-large the displacement is relative to current volatility (one ATR), not raw
-signs: in a market wobbling ±5bp the fast EMA sits trivially above the slow
-one half the time, and a sign vote would read that as "up" with a straight
-face. `ma_cross`'s own catalogue notes warn about exactly this; the analysis
-must not repeat the mistake.
-
-    trend_score = mean(votes) x min(1, ADX/40)      in [-1, +1]
-
-Only a market that is directional, *moved further than its own noise*, and
-trending per ADX produces a score the tilt overlay will act on.
-"""
+"""Trend analysis: direction and strength folded into one score in [-1, +1]."""
 
 from __future__ import annotations
 
@@ -23,10 +8,8 @@ import pandas as pd
 from ..engine import compute_series
 from .types import AnalysisResult
 
-#: ADX interpretation buckets (conventional boundaries).
 _BUCKETS = ((20.0, "absent"), (25.0, "weak"), (40.0, "trending"), (np.inf, "strong"))
 
-#: |trend_score| below this reads as "flat".
 _FLAT_BAND = 0.15
 
 
@@ -66,8 +49,6 @@ def run(
     ma_spread_bps = last(f"ma_spread_bps_{fast}_{slow}")
     close = float(frame["close"].iloc[-1])
 
-    # One ATR (or, without highs/lows, one close deviation) is the yardstick a
-    # displacement must clear before its vote counts in full.
     scale = last(f"atr_{adx_period}") if has_hl else None
     if not scale:
         scale = last("stddev_20")

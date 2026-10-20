@@ -1,20 +1,4 @@
-"""Idempotent persistence of computed indicators to `indicators_data`.
-
-The old writer did a blind `insert_many` on every request, so recomputing
-RSI for the same market appended a fresh copy of all 500 rows each time and
-the collection was mostly duplicates. Writes here are upserts on the natural
-key from ARCHITECTURE.md:
-
-    (symbol, source, interval, analysis, param_hash, time)
-
-`param_hash` is a stable digest of the *resolved* parameters, so `rsi` and
-`rsi:period=14` land on the same documents while `rsi:period=21` gets its
-own -- recomputing anything is always a no-op-or-overwrite, never a duplicate.
-
-One document per indicator request per bar, carrying all of that request's
-output columns in `values` (a MACD doc holds line, signal, and histogram
-together -- they are one computation and are only meaningful together).
-"""
+"""Idempotent persistence of computed indicators to `indicators_data`."""
 
 from __future__ import annotations
 
@@ -44,11 +28,7 @@ def _collection():
 
 
 def param_hash(params: Mapping[str, Any]) -> str:
-    """Stable short digest of a resolved parameter mapping.
-
-    Key order must not matter (`{"fast":12,"slow":26}` and the reverse are the
-    same request), hence the sorted canonical JSON.
-    """
+    """Stable short digest of a resolved parameter mapping."""
     canonical = json.dumps(dict(params), sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha1(canonical.encode()).hexdigest()[:12]
 
@@ -61,15 +41,7 @@ def docs_for(
     interval: str,
     latest_bar_only: bool = False,
 ) -> list[dict]:
-    """Build the documents for one compute result. Pure -- no Mongo here.
-
-    Rows where every output column is NaN (the warmup-masked head of the
-    series) are skipped: a document that says "we know nothing about this
-    bar" is storage spent making queries slower.
-
-    `latest_bar_only` keeps just the last timestamp. The always-on snapshot
-    writer uses it so an hourly tick does not rewrite the whole warmup window.
-    """
+    """Build the documents for one compute result. Pure -- no Mongo here."""
     by_request: dict[str, list] = {}
     for meta in result.columns:
         by_request.setdefault(meta.request, []).append(meta)
@@ -110,13 +82,7 @@ def docs_for(
 
 
 def _ensure_index(collection) -> None:
-    """Create the unique natural-key index, once per process.
-
-    Partial (only docs that *have* the new fields): the collection still
-    holds old-format rows from the legacy service, which all lack
-    `analysis`/`param_hash` and would collide as nulls under a plain unique
-    index, making index creation itself fail.
-    """
+    """Create the unique natural-key index, once per process."""
     collection.create_index(
         [(field, 1) for field in NATURAL_KEY],
         unique=True,
@@ -137,11 +103,7 @@ def save(
     collection=None,
     latest_bar_only: bool = False,
 ) -> int:
-    """Upsert every non-empty bar of `result`. Returns the document count.
-
-    `collection` is injectable for tests; by default the env-configured
-    `indicators_data` collection is used.
-    """
+    """Upsert every non-empty bar of `result`. Returns the document count."""
     docs = docs_for(
         result,
         symbol=symbol,
@@ -168,6 +130,6 @@ def save(
         )
     except SourceError:
         raise
-    except Exception as exc:  # pymongo's error tree is wide; wrap it once here
+    except Exception as exc:
         raise SourceError(f"cannot write indicators to Mongo: {exc}") from exc
     return len(docs)

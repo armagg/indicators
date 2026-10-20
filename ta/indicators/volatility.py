@@ -1,11 +1,4 @@
-"""Volatility and channel indicators.
-
-The most operationally relevant category for this desk. `market_maker`'s
-spread scaling (S2 `vol_spread_sensitivity`, S5 `spread_multiplier`) and the
-Phase 2 gap guard are all volatility functions -- today fed from
-`crypto_price`'s tick-based estimator with no independent check. These give a
-second, candle-based estimate of the same quantity.
-"""
+"""Volatility and channel indicators: the category the MM's spread scaling depends on."""
 
 from __future__ import annotations
 

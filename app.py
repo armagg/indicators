@@ -1,14 +1,4 @@
-"""Thin HTTP adapter over the `ta` package.
-
-Two endpoints and no business logic: `GET /indicators` is the machine-readable
-catalogue, `GET /indicator` computes (and by default persists) indicators for
-one market. Everything interesting lives in `ta/`; this file only translates
-query strings and exceptions.
-
-Breaking change from the legacy service, on purpose: `source` is now required.
-The old endpoint mixed candles from every venue that traded the market name
-(ARCHITECTURE.md, data contract). Existing callers must add `&source=...`.
-"""
+"""Thin Flask HTTP adapter over the `ta` package; all logic lives in `ta/`."""
 
 from __future__ import annotations
 
@@ -84,9 +74,6 @@ def get_indicator_endpoint():
     start = args.pop("start", None)
     end = args.pop("end", None)
 
-    # Two request shapes: `indicators=` takes the compact batch form
-    # ("rsi:period=21,macd,atr"); `indicator=` is the legacy single-indicator
-    # form whose parameters arrive as loose query args (`&period=21`).
     batch = args.pop("indicators", None)
     single = args.pop("indicator", None)
     if batch and (single or args):

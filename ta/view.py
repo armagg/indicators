@@ -1,26 +1,4 @@
-"""The exchange view: one screen per venue, for deciding what to run.
-
-This is the surface that makes an enable/disable decision possible. It puts
-three things side by side that otherwise live in three different systems:
-
-1. **What the tier list says** a market should be (this project's judgement).
-2. **What the live config actually does** (config-manager).
-3. **What the data says** about the market (candles from Mongo).
-
-The point is the disagreement. A market the desk considers major but which
-is quoting nothing, or a small risky market that is quietly live, is exactly
-what nobody notices until it matters -- so those rows sort to the top and
-carry an ALERT.
-
-Deliberately *not* a ranker. Risk shows up as named flags (`sparse`,
-`stale`, `volatile`, ...) rather than a score, because a single number
-invites treating "market #7" as a decision rather than as input to one.
-Flags say what is wrong; a human decides whether it disqualifies.
-
-    python -m ta.view --source nobitex
-    python -m ta.view tier set nobitex USDTIRT major --by omid
-    python -m ta.view propose enable nobitex SHIBIRT --max-base 5 --by omid
-"""
+"""The exchange view: one screen per venue, joining tier list, live config, and candle stats."""
 
 from __future__ import annotations
 
@@ -39,32 +17,15 @@ from .errors import ParamError, TAError
 from .frame import normalize_ohlcv
 from .tiers import DEFAULT_TIER, MAJOR, TierStore
 
-# --------------------------------------------------------------------------
-# Risk flag thresholds
-# --------------------------------------------------------------------------
-#
-# Each threshold names a concrete failure mode rather than a taste. They are
-# starting points, not truths -- adjust from what the view actually shows.
 
-#: Above this share of missing bars, every rolling window on this market
-#: spans more wall-clock time than its length implies. Matches
-#: `FrameInfo.is_sparse`.
 SPARSE_GAP_RATIO = 0.20
 
-#: A market whose last candle is older than this is not trading in any sense
-#: that matters for quoting.
 STALE_HOURS = 24.0
 
-#: Below this, recursive indicators are still inside their warmup and the
-#: analyses in this view cannot say much.
 THIN_HISTORY_BARS = 200
 
-#: NATR in percent. Above this the market moves multiple percent per bar,
-#: which for a passive quoter is adverse selection waiting to happen.
 HIGH_NATR_PCT = 3.0
 
-#: Coefficient of variation of volume. High means activity arrives in bursts
-#: rather than steadily -- inventory risk is lumpy and hard to size for.
 ERRATIC_VOLUME_CV = 2.0
 
 
@@ -105,8 +66,6 @@ def market_stats(frame: pd.DataFrame, *, now: datetime | None = None) -> MarketS
         natr = verdict.scalars.get("natr")
         vol_percentile = verdict.scalars.get("vol_percentile")
     except TAError:
-        # A frame too short or too broken for the volatility analysis still
-        # deserves a row -- the missing columns are themselves informative.
         pass
 
     median_volume = volume_cv = None
@@ -155,13 +114,9 @@ def load_stats(
     reader=None,
     now: datetime | None = None,
 ) -> MarketStats:
-    """Read candles for one market and summarise them.
-
-    A market with no candles is not an error -- it is a finding, and it gets
-    a row saying so.
-    """
+    """Read candles for one market and summarise them."""
     if reader is None:
-        from .ohlc import read_ohlc as reader  # local import keeps Mongo lazy
+        from .ohlc import read_ohlc as reader
     try:
         frame = reader(market, source, interval, limit=limit)
     except TAError:
@@ -169,11 +124,6 @@ def load_stats(
     return market_stats(frame, now=now) if frame is not None else MarketStats(flags=("no-data",))
 
 
-# --------------------------------------------------------------------------
-# Rows
-# --------------------------------------------------------------------------
-
-#: Disagreements between the tier list and live config, worst first.
 ALERT_MAJOR_NO_CONFIG = "NO-CONFIG"
 ALERT_MAJOR_OFF = "MAJOR-OFF"
 ALERT_RISK_ON = "RISK-ON"
@@ -237,12 +187,7 @@ def build_view(
     *,
     source: str = "",
 ) -> list[MarketRow]:
-    """Join live config, the tier list, and candle stats into sorted rows.
-
-    Markets appear if they are in *either* the live config or the tier list.
-    A major market with no config at all is precisely the kind of gap this
-    view exists to surface, so it gets a row rather than being skipped.
-    """
+    """Join live config, the tier list, and candle stats into sorted rows."""
     stats = stats or {}
     by_market: dict[str, MarketConfig] = {c.market: c for c in configs}
     tier_markets = {market for (src, market) in tiers if not source or src == source}
@@ -270,17 +215,10 @@ def build_view(
             )
         )
 
-    # Disagreements first -- the whole point of the view is that they are
-    # impossible to scroll past.
     rows.sort(
         key=lambda r: (_ALERT_ORDER.get(r.alert, 3), r.tier != MAJOR, r.market)
     )
     return rows
-
-
-# --------------------------------------------------------------------------
-# Rendering
-# --------------------------------------------------------------------------
 
 
 def _table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
@@ -348,11 +286,6 @@ def render(rows: Sequence[MarketRow]) -> str:
     return table + "\n" + "\n".join(footer)
 
 
-# --------------------------------------------------------------------------
-# Proposal drafting
-# --------------------------------------------------------------------------
-
-
 def draft_toggle(
     row: MarketRow,
     *,
@@ -360,13 +293,7 @@ def draft_toggle(
     max_base: float | None = None,
     note: str = "",
 ):
-    """Draft an enable/disable proposal for one market.
-
-    Drafting is not deciding: the proposal lands `pending` like every other,
-    and still needs `python -m ta.proposals approve`. The row's stats travel
-    with it as evidence, so whoever approves sees the same numbers that
-    prompted it.
-    """
+    """Draft an enable/disable proposal for one market."""
     from .proposals import create_proposal
     from .signals import ConfigDelta
 
@@ -408,11 +335,6 @@ def draft_toggle(
     )
 
 
-# --------------------------------------------------------------------------
-# CLI
-# --------------------------------------------------------------------------
-
-
 def collect(
     source: str,
     *,
@@ -446,8 +368,6 @@ def main(
     reader=None,
 ) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    # `python -m ta.view --source nobitex` is the common case; treat a bare
-    # option list as the `show` subcommand.
     if not argv or argv[0].startswith("-"):
         argv = ["show", *argv]
 

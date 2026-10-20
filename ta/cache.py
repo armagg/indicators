@@ -1,37 +1,4 @@
-"""A Mongo-backed cache for computed series and finished research runs.
-
-Research is repetitive in a specific way: a brute force recomputes the same
-EMA-20 for every one of the hundred rules that happens to reference it, and
-the next brute force recomputes all of them again tomorrow. The arithmetic
-is deterministic, so the second computation is pure waste.
-
-Two collections, in their own database (`ta_research` by default -- kept
-away from `market_making` so a cache wipe can never touch real data):
-
-- `indicator_columns` -- one document per (request, dataset), holding the
-  computed series. Read back, it is a DataFrame again.
-- `research_runs` -- one document per finished job, holding whatever the job
-  wants to remember. A repeated brute force with identical inputs returns
-  instantly instead of re-running its permutation test.
-
-## The fingerprint, and why cache invalidation is the hard part
-
-A cache that returns yesterday's EMA for today's candles is worse than no
-cache: it is silently wrong, and every downstream number inherits the error.
-So the key includes a `fingerprint` of the *data*, not just of the request.
-
-`frame_fingerprint` hashes the row count, the first and last timestamps, and
-a ~100-point subsample of the closes. Row count and endpoints catch the
-common case (new candles arrived). The subsample catches the nastier one:
-`market-data-collector` upserts, so a bar in the middle of the range can be
-rewritten when late trades land, leaving count and endpoints identical. A
-pure endpoint hash would serve stale series forever in exactly that case.
-
-It is a subsample, so it is not a proof -- a rewrite that misses every
-sampled point slips through. That is a deliberate trade: hashing every close
-costs more than recomputing the indicator for short frames. Pass
-`refresh=True` when you need certainty.
-"""
+"""A Mongo-backed cache for computed indicator columns and finished research runs."""
 
 from __future__ import annotations
 
@@ -48,7 +15,6 @@ from decouple import config as env
 from .engine import compute, parse_requests
 from .errors import SourceError
 
-#: Points of the close series folded into the fingerprint.
 _FINGERPRINT_SAMPLES = 100
 
 COLUMNS_COLLECTION = "indicator_columns"
@@ -81,8 +47,7 @@ def params_digest(params: Mapping[str, Any]) -> str:
 
 
 def _encode(values: np.ndarray) -> list:
-    """NaN -> None. BSON can hold NaN doubles, but a null round-trips through
-    every other tool (mongoexport, JSON views, the shell) unambiguously."""
+    """NaN -> None, so values round-trip through every other tool unambiguously."""
     return [None if not np.isfinite(v) else float(v) for v in values]
 
 
@@ -106,9 +71,6 @@ class ResearchCache:
             [("job", 1), ("dataset", 1), ("params", 1)], unique=True, name="ta_runs_key"
         )
 
-    # ------------------------------------------------------------------
-    # Computed series
-    # ------------------------------------------------------------------
 
     def get_columns(self, dataset: str, request: str) -> pd.DataFrame | None:
         doc = self.columns.find_one({"dataset": dataset, "request": request})
@@ -138,9 +100,6 @@ class ResearchCache:
         }
         self.columns.replace_one({"_id": doc["_id"]}, doc, upsert=True)
 
-    # ------------------------------------------------------------------
-    # Finished runs
-    # ------------------------------------------------------------------
 
     def get_run(self, job: str, dataset: str, params: Mapping[str, Any]) -> dict | None:
         doc = self.runs.find_one(
@@ -182,14 +141,7 @@ def compute_cached(
     refresh: bool = False,
     **compute_kwargs,
 ) -> tuple[pd.DataFrame, dict]:
-    """`ta.compute`, but every request is looked up before it is computed.
-
-    Returns the assembled columns and a `{"hits": n, "misses": n}` report --
-    a cache whose hit rate you cannot see is one you cannot trust.
-
-    Only the misses are computed, in a single batch, so a run that already
-    has three quarters of its indicators cached pays for one quarter.
-    """
+    """`ta.compute`, but every request is looked up before it is computed."""
     reqs = parse_requests(requests)
     pieces: dict[str, pd.DataFrame] = {}
     misses: list = []
@@ -228,8 +180,7 @@ _default: ResearchCache | None = None
 
 
 def default_cache() -> ResearchCache:
-    """Env-configured cache. `RESEARCH_DB_NAME` defaults to `ta_research`,
-    deliberately a different database from the trading data."""
+    """Env-configured cache; `RESEARCH_DB_NAME` defaults to `ta_research`."""
     global _default
     if _default is None:
         try:

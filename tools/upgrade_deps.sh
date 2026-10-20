@@ -1,5 +1,4 @@
 #!/bin/bash
-# Indicators: upgrade one package at a time, full suite after each.
 cd "$(dirname "$0")/.." || exit 1
 PY=venv/bin/python
 
@@ -20,8 +19,6 @@ step () {
   return 0
 }
 
-# pandas 3 is the whole point of this batch: it goes first, with the
-# datetime-resolution fix already in place, so any fallout is attributable.
 step pandas      3.0.6  || exit 1
 step numpy       2.5.4  || exit 1
 step Flask       3.1.3  || exit 1

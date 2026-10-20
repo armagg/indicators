@@ -1,10 +1,4 @@
-"""Non-indicator analyses: structured verdicts over one OHLCV frame.
-
-Each module exposes `run(frame, **params) -> AnalysisResult`. The registry
-here is deliberately just a dict -- a handful of analyses do not need the
-machinery indicators do, and their function signatures serve as their param
-schemas (validated by `call_with_loose_params`).
-"""
+"""Non-indicator analyses: structured verdicts over one OHLCV frame."""
 
 from __future__ import annotations
 

@@ -1,36 +1,4 @@
-"""Walk candles, quote, fill, score.
-
-## What this can and cannot tell you
-
-Read this before believing a number out of here.
-
-A resting bid at price P is filled when the bar's low reaches P. That rule is
-**optimistic**, in a specific way: a candle records that *someone* traded at
-that price, not that *you* would have. It ignores queue position entirely, so
-it assumes your order was at the front of the book and that the trade which
-printed at your price was large enough to fill your whole size. Real
-execution is a fraction of that.
-
-The consequence is precise, and it is the honest way to use this module:
-
-- **Valid**: comparing two configurations over the same bars. Both enjoy the
-  same optimism, so the *difference* between them is informative -- which is
-  exactly what a parameter sweep asks.
-- **Not valid**: absolute PnL, or deciding whether a market is profitable.
-  The number is an upper bound with no error bar on it.
-
-Every artifact this module produces carries that sentence. Step 8's plan says
-to put it there, and the reason is that a number in a file outlives the
-conversation in which its caveats were explained.
-
-## Causality
-
-The reference price for the quotes live on bar `t` is bar `t-1`'s close, and
-overlay deltas are computed from analyses over bars up to `t-1`. Quoting off
-bar `t`'s own close and then filling against bar `t`'s own range would be
-lookahead: the close is only knowable once the bar is over, by which time
-those fills have already happened.
-"""
+"""Walk candles, quote, fill, score. Comparisons are valid; absolute PnL is an upper bound."""
 
 from __future__ import annotations
 
@@ -46,7 +14,6 @@ from ..signals import ConfigDelta, OverlayContext, evaluate
 from .metrics import Fill, RunMetrics, summarize
 from .simulator import DIVERGENCES, Ladder, build_ladder, spread_floor
 
-#: Goes in every artifact. See the module docstring.
 DISCLAIMER = (
     "Candle-based fills ignore queue position and assume the whole level "
     "would have been taken, so absolute PnL is an UPPER BOUND, not a "
@@ -54,7 +21,6 @@ DISCLAIMER = (
     "valid as a profitability claim."
 )
 
-#: Analyses the overlay stack needs. Recomputed on the trailing window.
 _OVERLAY_ANALYSES = ("volatility", "trend", "regime")
 
 
@@ -93,21 +59,7 @@ def run(
     fee_rate: float | None = None,
     warmup_bars: int = 50,
 ) -> BacktestResult:
-    """Replay one config over one OHLCV frame.
-
-    `initial_base` defaults to the inventory band's midpoint, which is where
-    the skew logic considers the book neutral -- starting at an edge would
-    make the first hundred bars a story about unwinding, not about quoting.
-
-    `fee_rate` defaults to the config's `maker_fee` (then `market_take_fee`).
-    Fills are all passive, so the maker rate is the right one.
-
-    `overlays` is an overlay stack string (e.g. `"vol_widen, band_widen"`).
-    Deltas are recomputed every `overlay_every` bars -- analyses over a
-    trailing window are the expensive part of a sweep, and a spread overlay
-    that re-decides hourly is closer to how the live calibrators behave than
-    one re-deciding every minute.
-    """
+    """Replay one config over one OHLCV frame."""
     frame, info = normalize_ohlcv(data, require=("open", "high", "low", "close"))
     if len(frame) < warmup_bars + 2:
         raise FrameError(
@@ -160,7 +112,7 @@ def run(
     for position in range(warmup_bars, len(frame)):
         bar = frame.iloc[position]
         stamp = frame.index[position]
-        reference = float(closes.iloc[position - 1])  # last knowable price
+        reference = float(closes.iloc[position - 1])
 
         if overlays and (position - warmup_bars) % max(1, overlay_every) == 0:
             delta, overlay_warnings = _overlay_delta(
@@ -211,12 +163,7 @@ def run(
 
 
 def _fills_for_bar(ladder: Ladder, bar, stamp, fee: float) -> list[Fill]:
-    """Which resting quotes the bar traded through.
-
-    A bid fills when `low <= price`, an ask when `high >= price`. Both sides
-    can fill on the same bar -- on a wide bar that is exactly what a maker
-    wants, and refusing it would bias the simulation against volatility.
-    """
+    """Which resting quotes the bar traded through: bid on low, ask on high."""
     low, high = float(bar["low"]), float(bar["high"])
     out: list[Fill] = []
     for quote in ladder.bids:
@@ -242,8 +189,7 @@ def _fill(quote, stamp, fee: float) -> Fill:
 def _overlay_delta(
     history: pd.DataFrame, config: Mapping[str, Any], overlays
 ) -> tuple[ConfigDelta, list[str]]:
-    """Run the analyses over history and map them to a delta. Causal by
-    construction: `history` ends at the bar before the one being quoted."""
+    """Run the analyses over history and map them to a delta, causally."""
     warnings: list[str] = []
     results = {}
     for name in _OVERLAY_ANALYSES:
@@ -267,11 +213,7 @@ def _overlay_delta(
 def compare(
     data, baseline: Mapping[str, Any], variants: Mapping[str, Mapping[str, Any]], **kwargs
 ) -> dict[str, BacktestResult]:
-    """Run a baseline and named variants over the same bars.
-
-    The only comparison this module supports honestly -- same data, same
-    optimism, so the differences mean something even though the levels do not.
-    """
+    """Run a baseline and named variants over the same bars."""
     out = {"baseline": run(data, baseline, **kwargs)}
     for name, config in variants.items():
         out[name] = run(data, config, **kwargs)

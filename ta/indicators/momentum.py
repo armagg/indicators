@@ -31,10 +31,6 @@ def _rsi_series(close: pd.Series, period: int) -> pd.Series:
     avg_loss = wilder(loss, period)
 
     rsi = 100.0 - (100.0 / (1.0 + safe_ratio(avg_gain, avg_loss)))
-    # A window with no down-ticks makes avg_loss exactly 0. safe_ratio turned
-    # that into NaN to keep inf out of the arithmetic; the correct RSI there is
-    # 100 (and 0 in the mirror case), so restore it explicitly. Both happen
-    # routinely on thin IRT pairs that tick one way for a few bars.
     settled = avg_gain.notna() & avg_loss.notna()
     rsi = rsi.mask(settled & (avg_loss == 0) & (avg_gain > 0), 100.0)
     rsi = rsi.mask(settled & (avg_gain == 0) & (avg_loss > 0), 0.0)

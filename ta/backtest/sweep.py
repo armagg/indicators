@@ -1,22 +1,4 @@
-"""Grid search over the band and size knobs for one market.
-
-The payoff of the allowlist expansion: instead of arguing about whether the
-max spread should be 120bp or 200bp, run both over the same bars and look.
-
-Ranking is by PnL, but the table deliberately shows fills, uptime, and the
-600s markout next to it, because PnL alone hides the two ways a sweep
-result lies to you:
-
-- A config that quotes absurdly wide fills rarely. Its PnL-per-fill looks
-  wonderful and its total is noise from a handful of trades. Watch `fills`.
-- A config that quotes tight fills constantly and shows a big gross number
-  built entirely from adverse fills. Watch `markout_600`: if it is negative,
-  the spread was captured and then immediately given back.
-
-And the standing caveat from `runner.py` applies to every row: these are
-upper bounds under identical optimism, so read the *ordering*, not the
-levels.
-"""
+"""Grid search over the band and size knobs for one market, ranked by PnL."""
 
 from __future__ import annotations
 
@@ -27,8 +9,6 @@ from typing import Any, Iterable, Mapping, Sequence
 from ..errors import ParamError, TAError
 from .runner import DISCLAIMER, BacktestResult, run
 
-#: Knobs a sweep may vary. All are on the proposal allowlist, so anything a
-#: sweep recommends can actually be proposed afterwards.
 SWEEPABLE = ("price_min_spread", "price_max_spread", "max_base",
              "number_of_order_each_sides", "spread_multiplier")
 
@@ -68,13 +48,7 @@ def sweep(
     points: Iterable[Mapping[str, Any]],
     **run_kwargs,
 ) -> list[SweepRow]:
-    """Run every point over the same bars, ranked best PnL first.
-
-    A point whose config is invalid (an inverted band, say) becomes a row
-    carrying its error rather than aborting the sweep -- a grid usually has
-    a few corners that do not make sense, and losing the other ninety
-    results to one of them helps nobody.
-    """
+    """Run every point over the same bars, ranked best PnL first."""
     rows: list[SweepRow] = []
     for point in points:
         config = {**dict(baseline), **dict(point)}

@@ -1,16 +1,4 @@
-"""Volume-based indicators.
-
-A caveat that applies to this whole module on this desk's data: the `volume`
-column comes from `market-data-collector` summing the `amount` field of trades
-scraped from public endpoints. Nobitex's public trade feed is capped at 20
-records per poll, so on a busy USDTIRT minute the collector *sees* only part of
-the tape. Volume here is a sample, not a total, and its sampling rate changes
-with activity -- exactly when you would most want to trust it.
-
-Ratios and z-scores of volume against its own recent history survive that
-reasonably well. Absolute volume levels, and anything comparing volume across
-venues, do not.
-"""
+"""Volume-based indicators; volume here samples the tape, so ratios survive better than levels."""
 
 from __future__ import annotations
 
@@ -79,8 +67,6 @@ def vwap_indicator(df: pd.DataFrame, anchor: str = "day") -> pd.DataFrame:
         cumulative_volume = df["volume"].cumsum()
     else:
         freq = {"day": "D", "week": "W", "month": "MS"}[anchor]
-        # to_period on a tz-aware index warns and drops the tz itself; the
-        # frame is already UTC everywhere, so drop it explicitly first.
         groups = df.index.tz_localize(None).to_period(freq)
         cumulative_notional = notional.groupby(groups).cumsum()
         cumulative_volume = df["volume"].groupby(groups).cumsum()

@@ -1,26 +1,4 @@
-"""A durable job queue with in-process workers.
-
-The service accepts jobs, runs them in the background, and hands back
-results — instead of a container being started and torn down per task.
-
-Two design choices worth stating:
-
-**Jobs live in Mongo, not in memory.** A queue that dies with the process
-loses the record of what was asked, which on a multi-hour sweep is the
-expensive part. On startup, jobs left `running` by a previous process are
-marked `interrupted` rather than silently retried: a half-finished run whose
-outcome nobody observed should be visible as such, not quietly resurrected.
-
-**Workers are threads, few of them.** The heavy work is numpy, which
-releases the GIL, so threads get real parallelism without a second process
-to supervise. The count is deliberately small — this box also runs
-production services, and a research sweep must never be the reason the
-collector falls behind.
-
-Deduplication: an identical job that is already queued or running is not
-enqueued twice; the existing job's id comes back instead. Combined with the
-result cache, submitting the same scenario repeatedly is cheap and safe.
-"""
+"""A durable job queue with in-process workers, backed by Mongo and deduplicated by job identity."""
 
 from __future__ import annotations
 
@@ -40,8 +18,6 @@ QUEUED, RUNNING, DONE, FAILED, INTERRUPTED = (
 )
 ACTIVE = (QUEUED, RUNNING)
 
-#: Fields that define what a job *is*. Two jobs agreeing on all of these are
-#: the same job, however they were submitted.
 IDENTITY = ("market", "source", "interval", "family", "permutations",
             "consecutive_only", "split", "horizon")
 
@@ -72,7 +48,6 @@ class JobQueue:
         self._lock = threading.Lock()
         self.collection.create_index([("status", 1), ("submitted_at", 1)], name="ta_job_queue")
 
-    # ------------------------------------------------------------------
 
     def recover(self) -> int:
         """Mark jobs orphaned by a previous process. Call once at startup."""
@@ -126,7 +101,7 @@ class JobQueue:
                     "log": lines[-40:],
                 }},
             )
-        except Exception as exc:  # a failed job must not take the worker down
+        except Exception as exc:
             self.collection.update_one(
                 {"_id": identifier},
                 {"$set": {
@@ -137,7 +112,6 @@ class JobQueue:
                 }},
             )
 
-    # ------------------------------------------------------------------
 
     def get(self, identifier: str) -> dict | None:
         return self.collection.find_one({"_id": identifier})

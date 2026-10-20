@@ -1,28 +1,4 @@
-"""Shadow mode: record what the tilt *would* have set, and change nothing.
-
-This is the step that turns a backtest claim into evidence. Every hour it
-computes the tilt, works out the `target_base` that would follow from it,
-reads what the live config actually says, and stores the pair. Nothing is
-proposed and nothing is written to config-manager.
-
-Why this cannot be skipped: the backtest estimate (0.343 bp/bar, 95% CI
-[0.05, 0.63]) comes from candles resampled after the fact. Shadow mode
-samples the signal the way production would — on a trailing window, at a
-fixed cadence, with whatever data had actually arrived by then. If those two
-disagree, the difference is the part of the backtest that was an artifact of
-hindsight, and it is much cheaper to discover here than after a live write.
-
-Scoring uses the same `signal_value.evaluate` as the offline work, on the
-recorded tilts and the mids recorded beside them. Two guards make that
-honest:
-
-- Rows are scored against the *next recorded row*, and only when the two are
-  one cadence apart. A service restart leaves a hole, and a forward return
-  measured across it would span hours instead of one — the same
-  variable-horizon trap the `consecutive_only` control exists for.
-- The tilt stored is the one computed at the time. It is never recomputed
-  from newer candles, which would quietly leak hindsight back in.
-"""
+"""Shadow mode: record what the tilt *would* have set, and change nothing."""
 
 from __future__ import annotations
 
@@ -42,11 +18,8 @@ from ..signal_value import evaluate, forward_returns
 
 COLLECTION = "tilt_shadow"
 
-#: Bars pulled per observation. Enough for a stable normalization scale
-#: without making the hourly job expensive.
 LOOKBACK_BARS = 2000
 
-#: PLAN requires this much history before the proposal may proceed.
 REQUIRED_DAYS = 28
 
 
@@ -96,18 +69,7 @@ def observe(
     store: ShadowStore | None = None,
     now: datetime | None = None,
 ) -> dict:
-    """Take one observation. Returns the row; stores it when a store is given.
-
-    The bar the tilt is stamped on is the last *complete* candle:
-    `read_ohlc` plus `drop_incomplete_bar`, so a still-forming bar can never
-    be recorded as if it were final.
-
-    `config_market` exists because the two systems disagree about names. The
-    candles market-data-collector writes for nobitex are `USDTIRT` (Toman);
-    the config the market maker actually trades is `USDTRLS` (Rial). Same
-    book, two names, and looking up the wrong one silently yields no config
-    at all rather than an error. Ramzinex uses `USDTIRR` on both sides.
-    """
+    """Take one observation. Returns the row; stores it when a store is given."""
     frame = read_ohlc(market, source, interval, limit=LOOKBACK_BARS)
     if frame is None:
         raise SourceError(f"no candles for {market}/{source} {interval}")
@@ -128,7 +90,7 @@ def observe(
                 live = dict(market_config.config)
                 live["_version"] = market_config.version
         except TAError:
-            pass  # a config-manager blip must not lose the observation
+            pass
 
     min_base, max_base = live.get("min_base"), live.get("max_base")
     implied = (
@@ -149,15 +111,10 @@ def observe(
         "ma_spread_bps": verdict.scalars.get("ma_spread_bps"),
         "mid": float(frame["close"].iloc[-1]),
         "implied_target_base": implied,
-        # What the market is actually configured to do right now. The point
-        # of shadow mode is the gap between this and `implied_target_base`.
         "live_target_base": live.get("target_base"),
         "live_min_base": min_base,
         "live_max_base": max_base,
         "live_config_version": live.get("_version"),
-        # Realised inventory needs pnl.balance_snapshots in ClickHouse, which
-        # this project cannot read yet (PLAN options). Recorded as null so the
-        # column exists when that reader lands.
         "live_inventory": None,
         "dropped_forming_bar": bool(dropped),
         "warnings": list(verdict.warnings),
@@ -168,10 +125,7 @@ def observe(
 
 
 def observe_all(watchlist: Iterable[Sequence[str]], **kwargs) -> dict[str, Any]:
-    """Observe every watched market, surviving individual failures.
-
-    Entries are `(market, source)` or `(market, source, config_market)`.
-    """
+    """Observe every watched market, surviving individual failures."""
     recorded, failures = [], {}
     for entry in watchlist:
         market, source = entry[0], entry[1]
@@ -190,12 +144,7 @@ def observe_all(watchlist: Iterable[Sequence[str]], **kwargs) -> dict[str, Any]:
 
 
 def score(rows: Sequence[Mapping[str, Any]], *, cadence_sec: float = 3600.0) -> dict:
-    """Score recorded tilts against the returns that followed them.
-
-    Returns the live-sampled estimate to hold against the backtest's
-    0.343 bp/bar, plus the coverage needed to judge whether it is time to
-    look at all.
-    """
+    """Score recorded tilts against the returns that followed them."""
     usable = [
         r for r in rows
         if r.get("tilt") is not None and r.get("mid") and r.get("bar_time")
@@ -211,16 +160,6 @@ def score(rows: Sequence[Mapping[str, Any]], *, cadence_sec: float = 3600.0) -> 
     mids = np.array([float(r["mid"]) for r in usable])
 
     fwd = forward_returns(mids, 1)
-    # Only score pairs one cadence apart; a gap means the service was down
-    # and the "next" row is hours later.
-    #
-    # Force nanoseconds before taking the integer view. DatetimeIndex.view(
-    # "int64") returns the dtype's own unit, and pandas 3 no longer defaults to
-    # datetime64[ns]: a Timestamp built from an ISO string is [us] there, so the
-    # same expression yields microseconds (1000x smaller). Every gap would then
-    # miss the cadence window, no pair would score, and this function would
-    # report "not enough observations" forever instead of failing loudly.
-    # as_unit("ns").asi8 is unit-explicit and identical on pandas 2 and 3.
     gaps = np.diff(times.as_unit("ns").asi8) / 1e9
     adjacent = np.concatenate([np.abs(gaps - cadence_sec) <= 0.25 * cadence_sec, [False]])
     scored_fwd = np.where(adjacent, fwd, np.nan)
@@ -295,12 +234,7 @@ def default_store() -> ShadowStore:
 
 
 def watchlist_from_env() -> list[tuple[str, str, str]]:
-    """`SHADOW_MARKETS="<market>:<source>[:<config_market>], ..."`.
-
-    The third field covers the naming split between the candle store and the
-    trading config, e.g. `USDTIRT:nobitex:USDTRLS`. Omit it when both agree,
-    as on ramzinex.
-    """
+    """Parse `SHADOW_MARKETS="<market>:<source>[:<config_market>], ..."`."""
     from decouple import config as env
 
     out = []

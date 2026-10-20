@@ -1,39 +1,4 @@
-"""HTTP client for `config-manager`.
-
-Reading is free; exactly one function here writes (`put_market`), and only
-`ta/proposals/apply.py` is allowed to call it.
-
-The document shape is the part worth knowing before touching this file,
-because the read and write shapes are **not** the same:
-
-    GET /config/market/{source}/{market}
-      -> {"source": ..., "market_name": ..., "version": 12,
-          "timestamp": ..., "config": { ...the actual fields... }}
-
-    PUT /config/market/{source}/{market}
-      <- { ...the actual fields... }        # the INNER object, unwrapped
-
-So a read gives you a wrapper carrying the version, and a write takes the
-bare config. PUTting back what you read would nest a wrapper inside a config
-and quietly corrupt the document. `market_maker/config_client.py:137` does
-the same unwrap (`doc.get("config", {})`), which is the confirmation that
-this is the real contract and not an accident of one endpoint.
-
-Two more facts that shape the code:
-
-- Every PUT creates a **new version** (`config_manager.py:142`). There is no
-  patch endpoint, so changing one field is a read-modify-write, and the
-  version is the only thing that tells you whether someone else wrote in
-  between. That check lives in `apply.py`.
-- `upsert_config` injects `version` and `timestamp` *into* the inner config
-  before storing it. They are the server's bookkeeping, not settings, so
-  they are stripped on read and never sent back.
-
-Transport is injectable so tests never touch a socket. The default uses
-`urllib` from the standard library rather than `requests`/`httpx`: this is
-a handful of JSON calls, and the project has twice been bitten by
-third-party wheels not existing for its Python version.
-"""
+"""HTTP client for `config-manager`; `put_market` is the only write path."""
 
 from __future__ import annotations
 
@@ -48,8 +13,6 @@ from decouple import config as env
 
 from .errors import SourceError
 
-#: Keys config-manager owns and injects into the stored config. Stripped on
-#: read; never included in a write.
 SERVER_OWNED = frozenset({"version", "timestamp", "_id"})
 RISK_OWNED = frozenset({
     "disable_buy", "disable_sell", "sell_to_l0", "buy_size_scale",
@@ -65,7 +28,6 @@ class MarketConfig:
     source: str
     market: str
     version: int | None
-    #: The settings themselves, server bookkeeping already removed.
     config: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -86,12 +48,7 @@ class MarketConfig:
 
 
 class UrllibTransport:
-    """Minimal JSON transport. Returns `(status, parsed_body)`.
-
-    HTTP error statuses are returned rather than raised, so callers can tell
-    "no config for this market" (404) apart from "config-manager is down"
-    (which does raise, as a `SourceError`).
-    """
+    """Minimal JSON transport. Returns `(status, parsed_body)`."""
 
     def __init__(self, timeout: float = DEFAULT_TIMEOUT):
         self.timeout = timeout
@@ -126,9 +83,6 @@ class ConfigManagerClient:
         self.base_url = (base_url or env("CONFIG_MANAGER_URL")).rstrip("/")
         self.transport = transport or UrllibTransport()
 
-    # ------------------------------------------------------------------
-    # Reads
-    # ------------------------------------------------------------------
 
     def _url(self, *parts: str, trailing_slash: bool = False) -> str:
         path = "/".join(urllib.parse.quote(str(p), safe="") for p in parts)
@@ -167,20 +121,11 @@ class ConfigManagerClient:
             )
         return list(body or [])
 
-    # ------------------------------------------------------------------
-    # The single write
-    # ------------------------------------------------------------------
 
     def put_market(
         self, source: str, market: str, settings: Mapping[str, Any]
     ) -> MarketConfig:
-        """Replace a market's config, creating a new version.
-
-        `settings` is the **inner** config object, whole. There is no patch
-        endpoint: anything omitted here falls back to `ConfigSchema`'s
-        defaults rather than keeping its current value, which is why callers
-        must compose onto a freshly-read config rather than sending a subset.
-        """
+        """Replace a market's config with `settings`, the whole inner object, creating a new version."""
         payload = {
             k: v for k, v in settings.items()
             if k not in SERVER_OWNED and k not in RISK_OWNED
@@ -197,8 +142,7 @@ class ConfigManagerClient:
 
 
 def default_client() -> ConfigManagerClient:
-    """Env-configured client. `CONFIG_MANAGER_URL` is the service root, e.g.
-    `http://localhost:8000` -- the `/config/market/...` path is added here."""
+    """Env-configured client; `CONFIG_MANAGER_URL` is the service root."""
     try:
         return ConfigManagerClient()
     except Exception as exc:

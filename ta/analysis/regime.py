@@ -21,8 +21,6 @@ import pandas as pd
 from ..engine import compute_series
 from .types import AnalysisResult
 
-#: Events are reported for the tail of the frame only; older releases have
-#: already played out and only bloat the payload.
 _MAX_EVENTS = 20
 
 
@@ -59,8 +57,6 @@ def run(
             "frame shorter than the band/channel warmup: squeeze state unknown"
         )
 
-    # Releases: bars where the previous bar was squeezed and this one is not
-    # (evaluated only where both states are actually known).
     prev_squeeze = squeeze.shift(1, fill_value=False)
     release_mask = prev_squeeze & ~squeeze & known
     events = []
@@ -76,7 +72,6 @@ def run(
     squeeze_on = bool(squeeze.iloc[-1]) if len(squeeze) else False
     released_now = bool(release_mask.iloc[-1]) if len(release_mask) else False
 
-    # Consecutive trailing squeezed bars.
     bars_in_squeeze = 0
     for value in squeeze.iloc[::-1]:
         if not value:

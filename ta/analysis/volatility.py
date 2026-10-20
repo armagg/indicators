@@ -17,7 +17,6 @@ from ..frame import rolling_std
 from ..indicators._common import bars_per_year
 from .types import AnalysisResult
 
-#: vol_percentile boundaries for the human-readable regime label.
 _REGIMES = ((0.25, "calm"), (0.75, "normal"), (0.90, "elevated"), (1.01, "extreme"))
 
 

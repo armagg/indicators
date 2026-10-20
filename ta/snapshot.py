@@ -49,7 +49,6 @@ logger = logging.getLogger(__name__)
 SNAPSHOT_INDICATORS = "rsi:period=14,stoch_rsi,macd,volume_zscore,volume_sma,natr"
 SNAPSHOT_ANALYSES = "volatility,trend,regime"
 
-#: Config-market names that get a 15Min tape on top of 1H.
 FX_15MIN_MARKETS = frozenset({"USDTRLS", "USDTIRT", "USDTIRR", "USDTTMN"})
 
 BAR_SECONDS = {
@@ -68,28 +67,9 @@ STALE_BARS = 2
 LATEST_COLLECTION = "ta_analysis_latest"
 
 
-# Quote-suffix rename applied by market-data-collector ON INGEST, per source.
-# The trading config and the candle store disagree about the name of the same
-# book, and they disagree DIFFERENTLY per venue, so this cannot be a single
-# global rule -- verified against the store 2026-09-05:
-#
-#   nobitex   config ETHRLS  ->  stored ETHIRT   (881,811 docs)   rename
-#   wallex    config ETHTMN  ->  stored ETHIRT   (693,292 docs)   rename
-#   ramzinex  config ETHIRR  ->  stored ETHIRR   (525,282 docs)   NO rename
-#
-# ramzinex is the reason a blanket "normalise everything to IRT" is wrong: its
-# collector keeps the config name verbatim (exchanges/ramzinex.py parse_trades),
-# while wallex rewrites TMN->IRT (exchanges/wallex.py:75) and nobitex arrives as
-# IRT already. Mapping ramzinex too would break the one venue that works.
-#
-# A missing entry here is not a crash. It is a silent empty candle read, which
-# is how EVERY wallex market went dark: config asked for ETHTMN, the store held
-# ETHIRT, `no candles` was raised per market, and the whole venue was absent
-# from TA for as long as nobody looked. If you add a venue, add it here.
 _OHLC_SUFFIX: dict[str, tuple[str, str]] = {
     "nobitex": ("RLS", "IRT"),
     "wallex": ("TMN", "IRT"),
-    # ramzinex: intentionally absent -- stored under the config name.
 }
 
 
@@ -459,16 +439,6 @@ def capture_enabled(
                 else:
                     recorded.append(result)
 
-        # A WHOLE VENUE GOING DARK MUST NOT LOOK LIKE A FEW BAD MARKETS.
-        #
-        # Every wallex snapshot failed on every cycle for an unknown length of
-        # time, and the only trace was one WARNING per market per run, mixed in
-        # with the healthy venues' output. Downstream, risk-aggregator read the
-        # resulting 404s as "no volatility risk", so the venue was not merely
-        # missing from TA -- it was silently exempt from a risk control.
-        #
-        # Total failure of a source is a different event from a market or two
-        # erroring, and it is logged as one.
         if source_attempted and source_failed == source_attempted:
             failures[f"{source}/*"] = (
                 f"ALL {source_attempted} snapshot(s) failed"

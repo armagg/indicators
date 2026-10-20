@@ -33,7 +33,6 @@ from typing import Any
 from ..errors import ParamError
 from .models import Proposal, Status, TERMINAL
 
-#: Legal successor states. Absent or empty means terminal.
 LEGAL_TRANSITIONS: dict[Status, frozenset[Status]] = {
     Status.PENDING: frozenset({Status.APPROVED, Status.REJECTED, Status.STALE}),
     Status.APPROVED: frozenset({Status.APPLIED, Status.FAILED, Status.STALE}),

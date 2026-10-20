@@ -42,7 +42,6 @@ def _find_swing_pivots(
     for i in range(left, n - right):
         h_window = high[i - left : i + right + 1]
         l_window = low[i - left : i + right + 1]
-        # Leftmost peak/trough in the window — plateaus still register once.
         if high[i] == h_window.max() and int(np.argmax(h_window)) == left:
             pivots.append(
                 {
@@ -228,7 +227,6 @@ def run(
         else:
             clusters = _cluster_pivots(pivots, cluster_bps, last_bar)
             supports, resistances = _classify_and_rank(clusters, close, max_levels)
-            # Events: strongest levels first, then chronological among the tail.
             ranked = sorted(
                 supports + resistances,
                 key=lambda L: L["strength"],
@@ -236,7 +234,6 @@ def run(
             )
             events = ranked[:_MAX_EVENTS]
 
-    # Nearest = closest in price: highest support below close, lowest resistance above.
     nearest_support = max((s["price"] for s in supports), default=None)
     nearest_resistance = min((r["price"] for r in resistances), default=None)
 
@@ -247,7 +244,6 @@ def run(
         _bps(nearest_resistance, close) if nearest_resistance is not None else None
     )
 
-    # Dynamic levels via registered indicators.
     dynamic_support = None
     dynamic_resistance = None
     series: dict[str, pd.Series] = {}
@@ -273,9 +269,6 @@ def run(
         kc_upper = computed[f"kc_upper_{kc_window}_{kc_atr}_{kc_multiplier}"]
         kc_lower = computed[f"kc_lower_{kc_window}_{kc_atr}_{kc_multiplier}"]
 
-        # Prior-bar Donchian: the live channel includes this bar's own high/low,
-        # so close is always inside it (see donchian indicator notes). Dynamic
-        # S/R and in_range use the confirmed previous channel instead.
         prior_dc_lower = dc_lower.shift(1)
         prior_dc_upper = dc_upper.shift(1)
         dynamic_support = _last(prior_dc_lower)

@@ -31,19 +31,13 @@ from pymongo.errors import PyMongoError
 
 from .errors import ParamError, SourceError
 
-#: Iran abolished DST in 2022; MDC uses this fixed offset, so we match it
-#: rather than pulling in zoneinfo's historical table.
 TEHRAN = timezone(timedelta(hours=3, minutes=30))
 
-#: The exact format MDC writes (`save_ohlc_data` in market-data-collector).
 TIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
 
-#: Interval labels as MDC writes them, keyed lowercase for forgiving lookup.
 INTERVALS = ("1Min", "5Min", "15Min", "1H", "4H", "1D")
 _INTERVAL_LOOKUP = {label.lower(): label for label in INTERVALS}
 
-#: Columns the TA layer actually reads. Projecting here keeps MDC's extras
-#: (mean/median/std/count/total/date) out of every frame and every payload.
 _PROJECTION = {"_id": 0, "time": 1, "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1}
 
 DEFAULT_LOOKBACK = 1000
@@ -134,7 +128,6 @@ def read_ohlc(
                 cursor = cursor.limit(int(limit))
             docs = list(cursor)
         else:
-            # Newest-first + limit, then flipped: "the last N bars".
             docs = list(cursor.sort("time", -1).limit(int(limit or DEFAULT_LOOKBACK)))
     except PyMongoError as exc:
         raise SourceError(f"cannot read OHLC from Mongo: {exc}") from exc

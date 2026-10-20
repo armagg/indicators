@@ -31,13 +31,9 @@ from ..engine import compute_series
 from ..signal_value import normalize_signal
 from .types import AnalysisResult
 
-#: The approved signal. Changing these is a research decision, not a tweak:
-#: they are the parameters that replicated across two venues.
 DEFAULT_FAST = 20
 DEFAULT_SLOW = 30
 
-#: Fraction of the band's half-width a tilt may move the target. PLAN sets
-#: 0.30 as the standing cap and 0.15 for the first live month.
 DEFAULT_CAP = 0.30
 
 

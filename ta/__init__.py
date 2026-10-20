@@ -37,8 +37,6 @@ from .errors import (
 from .frame import FrameInfo, drop_incomplete_bar, normalize_ohlcv
 from .registry import all_specs, catalogue, get_spec, list_indicators
 
-# Importing the subpackage is what fills the registry; keep it last so the
-# registry decorator and its dependencies are fully defined first.
 from . import indicators as _indicators  # noqa: F401  (registration side effect)
 
 __all__ = [

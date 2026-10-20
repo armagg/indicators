@@ -27,8 +27,6 @@ from typing import Any, Iterable, Mapping, Sequence
 from ..errors import ParamError, TAError
 from .runner import DISCLAIMER, BacktestResult, run
 
-#: Knobs a sweep may vary. All are on the proposal allowlist, so anything a
-#: sweep recommends can actually be proposed afterwards.
 SWEEPABLE = ("price_min_spread", "price_max_spread", "max_base",
              "number_of_order_each_sides", "spread_multiplier")
 

@@ -41,10 +41,6 @@ import pandas as pd
 
 from .errors import ParamError, UnknownIndicator
 
-# --------------------------------------------------------------------------
-# Parameter specifications
-# --------------------------------------------------------------------------
-
 
 @dataclass(frozen=True)
 class Param:
@@ -77,7 +73,6 @@ class IntParam(Param):
 
     def coerce(self, value: Any) -> int:
         try:
-            # int("14.0") raises; float first so query strings survive.
             out = int(float(value))
         except (TypeError, ValueError):
             raise ParamError(f"{self.name!r} must be an integer, got {value!r}")
@@ -143,12 +138,6 @@ class BoolParam(Param):
         raise ParamError(f"{self.name!r} must be a boolean, got {value!r}")
 
 
-# --------------------------------------------------------------------------
-# Indicator specification
-# --------------------------------------------------------------------------
-
-#: Categories, ordered roughly by how a chartist would group them. Used to
-#: organise the API catalogue and the `analyze()` snapshot.
 CATEGORIES = (
     "trend",
     "momentum",
@@ -165,26 +154,12 @@ class IndicatorSpec:
     name: str
     fn: Callable[..., pd.DataFrame]
     category: str
-    #: Output column-name templates. `{param}` placeholders are filled from the
-    #: resolved parameters, so `sma_{window}` becomes `sma_20`. Parameterised
-    #: names are what let a caller request sma(20) and sma(50) in one pass
-    #: without a collision.
     outputs: tuple[str, ...]
     params: tuple[Param, ...] = ()
-    #: Input columns the indicator reads. Checked before the function runs.
     requires: tuple[str, ...] = ("close",)
-    #: Resolved params -> number of leading bars whose output should not be
-    #: trusted. For window indicators this is the window (output is NaN before
-    #: it). For recursive ones (Wilder, EMA) the output is *non-NaN* much
-    #: earlier than it is *correct*, because it still carries the seed value;
-    #: those declare a convergence-based multiple instead. See `warmup_bars`.
     warmup: Callable[[Mapping[str, Any]], int] = lambda p: 1
-    #: False for indicators that read bars ahead of the one they are stamped
-    #: on. Refused by default on any path feeding signals or a backtest.
     causal: bool = True
     doc: str = ""
-    #: Free-form notes surfaced in the catalogue -- caveats, conventions, and
-    #: which platform's variant this matches.
     notes: str = ""
 
     def param_map(self) -> dict[str, Param]:

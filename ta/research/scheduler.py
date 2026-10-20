@@ -46,7 +46,6 @@ class ShadowScheduler:
         self._stop.set()
 
     def _loop(self) -> None:
-        # Let the service finish coming up before the first observation.
         if self._stop.wait(self.initial_delay_sec):
             return
         while not self._stop.is_set():
@@ -96,7 +95,7 @@ def default_scheduler() -> ShadowScheduler | None:
             try:
                 client = ConfigManagerClient()
             except Exception:
-                client = None  # record the tilt even if config-manager is down
+                client = None
             return observe_all(
                 watchlist, store=default_store(), config_client=client
             )

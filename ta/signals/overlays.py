@@ -60,19 +60,12 @@ from ..analysis.tilt import implied_target_base
 from ..analysis.types import AnalysisResult, call_with_loose_params
 from ..errors import ParamError
 
-#: Hard cap from config-manager's model (`Field(1.0, gt=0, le=5)`).
 _SPREAD_MULTIPLIER_CAP = 5.0
 
-#: Sanity ceiling for a research tilt: 500bp. Calibrated structural premia
-#: run tens of bp; anything near this bound is a bug, not a signal.
 _MAX_STRUCTURAL_PREMIUM = 0.05
 
-#: Absurd-but-finite ceiling on a spread band, as a fraction of price. Real
-#: values are single-digit permille; this only catches unit mistakes (a
-#: caller passing 2.5 meaning "2.5%" rather than 0.025).
 _MAX_SPREAD_FRACTION = 0.5
 
-#: Fields that are set outright rather than composed. See module docstring.
 ABSOLUTE_FIELDS = frozenset(
     {
         "price_min_spread",
@@ -85,9 +78,6 @@ ABSOLUTE_FIELDS = frozenset(
     }
 )
 
-#: Changes that put more capital at risk, or resume quoting. The approval
-#: step surfaces these differently -- they are the ones a human must not
-#: rubber-stamp.
 HIGH_IMPACT_FIELDS = frozenset({"is_enable", "max_base", "number_of_order_each_sides"})
 
 
@@ -101,14 +91,12 @@ class ConfigDelta:
     the proposal record, not a config field.
     """
 
-    # --- scaling knobs ---------------------------------------------------
     spread_multiplier: float | None = None
     premium_skew_factor: float | None = None
     structural_premium: float | None = None
     disable_buy: bool | None = None
     disable_sell: bool | None = None
     vol_spread_sensitivity: float | None = None
-    # --- absolute knobs --------------------------------------------------
     price_min_spread: float | None = None
     price_max_spread: float | None = None
     min_base: float | None = None
@@ -172,9 +160,6 @@ class ConfigDelta:
                 f"got {self.number_of_order_each_sides}"
             )
 
-    # ------------------------------------------------------------------
-    # Introspection
-    # ------------------------------------------------------------------
 
     def fields(self) -> dict[str, Any]:
         """The config fields this delta actually sets (reason excluded)."""
@@ -207,9 +192,6 @@ class ConfigDelta:
         out["reason"] = self.reason
         return out
 
-    # ------------------------------------------------------------------
-    # Application
-    # ------------------------------------------------------------------
 
     def apply_to(self, config: Mapping[str, Any]) -> dict[str, Any]:
         """Compose this delta onto a baseline config and validate the result.
@@ -280,18 +262,6 @@ def _validate_result(config: Mapping[str, Any], delta: ConfigDelta) -> None:
             f"max_base={max_base}"
         )
 
-    # The maker floors the half-spread at break-even and silently clamps
-    # anything tighter, so such a proposal is a no-op live -- worse than
-    # refused, because a backtest would still "apply" it and report an edge
-    # that cannot exist.
-    #
-    # The floor is ONE maker fee, not two. A round trip buys at mid-s and
-    # sells at mid+s: gross 2s against fees of 2*maker_fee, so break-even is
-    # s == maker_fee. `market_maker._spread_floor` documents that using 2x
-    # here was a real bug -- on nobitex (maker_fee 9.61bp) it forbade the
-    # 15-18bp band where that market's expected value actually peaks. Margin
-    # above break-even belongs in price_min_spread itself, not in this
-    # backstop.
     if delta.price_min_spread is not None:
         maker_fee = config.get("maker_fee") or config.get("market_take_fee") or 0.0
         floor = float(maker_fee)
@@ -419,11 +389,6 @@ class OverlayContext:
             return default
         value = self.config.get(key, default)
         return default if value is None else value
-
-
-# --------------------------------------------------------------------------
-# The overlays
-# --------------------------------------------------------------------------
 
 
 def vol_widen(
@@ -555,8 +520,6 @@ def size_down(
 
     min_base = ctx.config_value("min_base")
     if min_base is not None and scaled < float(min_base):
-        # Sizing below the inventory floor would invert the band; clamp and
-        # say so rather than emitting something `apply_to` will reject.
         scaled = float(min_base)
         if scaled >= float(current) * (1.0 - 1e-9):
             return EMPTY
@@ -696,10 +659,6 @@ def squeeze_brace(
     return ConfigDelta(**delta_kwargs)
 
 
-#: `is_enable` is intentionally absent from every automatic overlay. Turning
-#: a market on or off is a human decision routed through the proposal flow;
-#: an overlay that flipped it on a percentile crossing would be exactly the
-#: autonomy this project does not have.
 OVERLAYS = {
     "vol_widen": vol_widen,
     "band_widen": band_widen,
@@ -716,7 +675,7 @@ def evaluate(ctx: OverlayContext, specs) -> ConfigDelta:
     `specs` accepts the engine's request shapes, so an overlay stack can live
     in one string: `"vol_widen:threshold=0.8,cap=3, band_widen, trend_tilt"`.
     """
-    from ..engine import parse_requests  # local import: engine must not import signals
+    from ..engine import parse_requests
 
     deltas = []
     for request in parse_requests(specs):

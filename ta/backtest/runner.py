@@ -46,7 +46,6 @@ from ..signals import ConfigDelta, OverlayContext, evaluate
 from .metrics import Fill, RunMetrics, summarize
 from .simulator import DIVERGENCES, Ladder, build_ladder, spread_floor
 
-#: Goes in every artifact. See the module docstring.
 DISCLAIMER = (
     "Candle-based fills ignore queue position and assume the whole level "
     "would have been taken, so absolute PnL is an UPPER BOUND, not a "
@@ -54,7 +53,6 @@ DISCLAIMER = (
     "valid as a profitability claim."
 )
 
-#: Analyses the overlay stack needs. Recomputed on the trailing window.
 _OVERLAY_ANALYSES = ("volatility", "trend", "regime")
 
 
@@ -160,7 +158,7 @@ def run(
     for position in range(warmup_bars, len(frame)):
         bar = frame.iloc[position]
         stamp = frame.index[position]
-        reference = float(closes.iloc[position - 1])  # last knowable price
+        reference = float(closes.iloc[position - 1])
 
         if overlays and (position - warmup_bars) % max(1, overlay_every) == 0:
             delta, overlay_warnings = _overlay_delta(

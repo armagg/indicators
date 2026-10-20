@@ -35,9 +35,6 @@ from . import lifecycle
 from .models import Proposal, Status
 from .store import ProposalStore
 
-#: Fields a proposal is permitted to change. Mirrors `ConfigDelta`'s own
-#: shape -- kept as a set here so the post-composition check can be stated
-#: directly against the wire payload rather than against the delta object.
 ALLOWLIST = frozenset(
     f.name for f in ConfigDelta.__dataclass_fields__.values() if f.name != "reason"
 )
@@ -50,7 +47,6 @@ class ApplyResult:
     proposal: Proposal
     dry_run: bool
     applied: bool
-    #: field -> (before, after), only for fields that actually change.
     diff: dict[str, tuple[Any, Any]] = field(default_factory=dict)
     base_version: int | None = None
     live_version: int | None = None
@@ -144,9 +140,6 @@ def apply(
 
     live = client.get_market(proposal.source, proposal.market)
     if live is None:
-        # A delta describes a change to settings, not a whole market. Creating
-        # a config needs fields (market_id, base, quote, precision...) no
-        # proposal carries, so this is out of scope rather than half-supported.
         raise ParamError(
             f"{proposal.source}/{proposal.market} has no config in config-manager. "
             f"This project modifies existing markets; it cannot create one."
@@ -174,10 +167,6 @@ def apply(
     _assert_only_allowlisted(diff)
 
     if not diff:
-        # The live config already satisfies the proposal -- someone applied
-        # the same change by hand, or a calibrator arrived at it independently.
-        # The desired end state holds, so close the card rather than leaving
-        # an approved proposal sitting in the queue forever.
         result = ApplyResult(
             proposal=checked,
             dry_run=dry_run,
@@ -221,9 +210,6 @@ def apply(
             error=str(exc),
         )
 
-    # The write landed and is versioned server-side. If recording it locally
-    # fails from here, config-manager's own version history is still the
-    # authoritative record of what changed -- nothing is half-written.
     done = lifecycle.mark_applied(checked, result_version=written.version)
     if store is not None:
         store.commit(checked, done, action="apply", actor=actor)

@@ -37,10 +37,8 @@ from decouple import config
 from ..errors import SourceError
 from .models import Proposal, Status
 
-#: Statuses whose presence suppresses a re-proposal of the same change.
 _SUPPRESSING = frozenset({Status.PENDING, Status.APPROVED, Status.REJECTED, Status.APPLIED})
 
-#: Statuses a fresh proposal is allowed to overwrite.
 _REPLACEABLE = frozenset({Status.STALE, Status.FAILED})
 
 NATURAL_KEY = ("source", "market", "delta_hash", "base_version")
@@ -62,14 +60,8 @@ class ProposalStore:
     proposals: Any
     decisions: Any
 
-    # ------------------------------------------------------------------
-    # Schema
-    # ------------------------------------------------------------------
 
     def ensure_indexes(self) -> None:
-        # `_id` is already the digest of the natural key, so this unique
-        # index is belt and braces -- but it states the invariant explicitly
-        # and keeps holding if `make_id` is ever changed.
         self.proposals.create_index(
             [(field, 1) for field in NATURAL_KEY], unique=True, name="ta_proposal_key"
         )
@@ -80,9 +72,6 @@ class ProposalStore:
             [("proposal_id", 1), ("at", 1)], name="ta_decision_trail"
         )
 
-    # ------------------------------------------------------------------
-    # Reads
-    # ------------------------------------------------------------------
 
     def get(self, proposal_id: str) -> Proposal | None:
         doc = self.proposals.find_one({"_id": proposal_id})
@@ -109,9 +98,6 @@ class ProposalStore:
     def history(self, proposal_id: str) -> list[dict]:
         return list(self.decisions.find({"proposal_id": proposal_id}).sort("at", 1))
 
-    # ------------------------------------------------------------------
-    # Writes
-    # ------------------------------------------------------------------
 
     def save_new(self, proposal: Proposal) -> SaveOutcome:
         """Insert a pending proposal, honouring the re-proposal rules above."""

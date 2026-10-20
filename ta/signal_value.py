@@ -43,7 +43,6 @@ from dataclasses import asdict, dataclass
 import numpy as np
 import pandas as pd
 
-#: Crypto trades continuously; annualisation is plain calendar time.
 _SECONDS_PER_YEAR = 365.0 * 24.0 * 3600.0
 
 
@@ -52,23 +51,14 @@ class SignalValue:
     """What tilting inventory on one signal would have earned."""
 
     bars: int
-    #: Correlation of the signal with the return that follows it.
     ic: float
-    #: t-statistic of the mean tilt P&L. |t| > 2 is the usual bar, and it is
-    #: a low bar when the signal was picked out of a large grid.
     ic_t: float
-    #: The number that matters: per-bar excess of a +/-1 inventory tilt over
-    #: holding the same *average* inventory constantly, in basis points.
     excess_bps: float
     excess_ann_pct: float
-    #: mean(s*r) -- what a naive backtest would have printed.
     naive_bps: float
-    #: mean(s)*mean(r) -- the part that is just drift on average exposure.
     drift_bps: float
     mean_signal: float
-    #: Mean |change| in the signal per bar: how much the tilt actually moves.
     turnover: float
-    #: Share of bars where the tilt had the same sign as the return.
     hit_rate: float
 
     def as_dict(self) -> dict:
@@ -163,7 +153,7 @@ def evaluate(signal, forward, *, bar_seconds: float | None = None) -> SignalValu
 
     naive = float(np.mean(s * r))
     drift = float(np.mean(s) * np.mean(r))
-    excess = naive - drift  # == population Cov(s, r)
+    excess = naive - drift
 
     tilt_pnl = (s - s.mean()) * r
     deviation = float(np.std(tilt_pnl))

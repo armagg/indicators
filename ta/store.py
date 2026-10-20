@@ -168,6 +168,6 @@ def save(
         )
     except SourceError:
         raise
-    except Exception as exc:  # pymongo's error tree is wide; wrap it once here
+    except Exception as exc:
         raise SourceError(f"cannot write indicators to Mongo: {exc}") from exc
     return len(docs)

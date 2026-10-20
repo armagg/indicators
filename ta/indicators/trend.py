@@ -24,11 +24,6 @@ from ._common import (
 _WINDOW = IntParam("window", 20, doc="Lookback length in bars.", minimum=2, maximum=5000)
 
 
-# --------------------------------------------------------------------------
-# Moving averages
-# --------------------------------------------------------------------------
-
-
 @indicator(
     "sma",
     category="trend",
@@ -174,11 +169,6 @@ def kama_indicator(
     return frame(df.index, **{f"kama_{window}": pd.Series(out, index=df.index)})
 
 
-# --------------------------------------------------------------------------
-# Directional structure
-# --------------------------------------------------------------------------
-
-
 @indicator(
     "adx",
     category="trend",
@@ -232,7 +222,7 @@ def adx_indicator(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
     ),
 )
 def aroon_indicator(df: pd.DataFrame, period: int = 25) -> pd.DataFrame:
-    window = period + 1  # the window includes the current bar
+    window = period + 1
     since_high = df["high"].rolling(window, min_periods=window).apply(
         lambda v: float(len(v) - 1 - np.argmax(v)), raw=True
     )
@@ -296,7 +286,6 @@ def psar_indicator(df: pd.DataFrame, step: float = 0.02, max_step: float = 0.2) 
 
     for i in range(2, n):
         current = current + accel * (extreme - current)
-        # SAR may not penetrate either of the two prior bars' opposite extremes.
         if long:
             current = min(current, low[i - 1], low[i - 2])
         else:
@@ -364,8 +353,6 @@ def supertrend_indicator(
             started = True
             continue
 
-        # The bands only tighten while the trend holds; a widening band is
-        # ignored until price closes through the previous one.
         upper[i] = (
             min(upper_basic[i], upper[i - 1])
             if close[i - 1] <= upper[i - 1]

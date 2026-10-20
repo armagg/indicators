@@ -53,9 +53,7 @@ class Status(str, Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     APPLIED = "applied"
-    #: The config moved underneath us before this could be applied.
     STALE = "stale"
-    #: An approved apply reached config-manager and did not succeed.
     FAILED = "failed"
 
 
@@ -92,18 +90,14 @@ class Proposal:
     source: str
     market: str
     delta: ConfigDelta
-    #: config-manager version this delta was composed against. None only
-    #: when the market has no config yet (a first-time enable).
     base_version: int | None
     status: Status = Status.PENDING
-    #: `AnalysisResult.as_dict()` payloads, series excluded. The "why".
     evidence: tuple[dict, ...] = ()
     created_at: datetime = field(default_factory=_utcnow)
     decided_by: str | None = None
     decided_at: datetime | None = None
     decision_note: str = ""
     applied_at: datetime | None = None
-    #: The version config-manager returned after a successful apply.
     result_version: int | None = None
     error: str = ""
 

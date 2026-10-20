@@ -11,31 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-# --------------------------------------------------------------------------
-# Warmup
-# --------------------------------------------------------------------------
-#
-# Two different things get called "warmup" and conflating them is why the same
-# indicator reads differently on two charts.
-#
-# *Window* indicators (SMA, Bollinger, Donchian) have a hard boundary: before
-# bar N the output is NaN, from bar N it is exactly right. Warmup = N.
-#
-# *Recursive* indicators (EMA, and everything built on one -- RSI, MACD, ATR,
-# ADX, TSI) have no such boundary. `adjust=False` seeds the recursion with the
-# first observation and every later value still contains a fraction of that
-# seed. The output is non-NaN long before it is correct.
-#
-# The seed's residual weight after k bars is (1 - alpha)^k. We call it settled
-# once that drops below 5%:
-#
-#     k > ln(0.05) / ln(1 - alpha)  ~=  3 / alpha
-#
-# For Wilder smoothing (alpha = 1/period) that is the familiar "3x the period"
-# rule of thumb -- a 14-period RSI wants ~42 bars, not 14. For a span-n EMA
-# (alpha = 2/(n+1)) it is ~1.5 * (n+1).
 
-#: Residual weight of the seed value at which a recursion is called settled.
 SEED_TOLERANCE = 0.05
 
 
@@ -54,11 +30,6 @@ def ema_warmup(span: int) -> int:
 def wilder_warmup(period: int) -> int:
     """Warmup for Wilder smoothing (alpha = 1/period). ~3x the period."""
     return alpha_warmup(1.0 / period)
-
-
-# --------------------------------------------------------------------------
-# Moving averages used as building blocks
-# --------------------------------------------------------------------------
 
 
 def sma(series: pd.Series, window: int) -> pd.Series:
@@ -93,11 +64,6 @@ def rolling_min(series: pd.Series, window: int) -> pd.Series:
 
 def rolling_sum(series: pd.Series, window: int) -> pd.Series:
     return series.rolling(window=window, min_periods=window).sum()
-
-
-# --------------------------------------------------------------------------
-# Numerics
-# --------------------------------------------------------------------------
 
 
 def safe_ratio(numerator: pd.Series, denominator: pd.Series) -> pd.Series:

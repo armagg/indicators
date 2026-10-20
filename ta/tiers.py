@@ -30,7 +30,6 @@ MAJOR = "major"
 OTHER = "other"
 TIERS = (MAJOR, OTHER)
 
-#: What a market is when nobody has said otherwise.
 DEFAULT_TIER = OTHER
 
 

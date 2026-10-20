@@ -48,7 +48,6 @@ from decouple import config as env
 from .engine import compute, parse_requests
 from .errors import SourceError
 
-#: Points of the close series folded into the fingerprint.
 _FINGERPRINT_SAMPLES = 100
 
 COLUMNS_COLLECTION = "indicator_columns"
@@ -106,9 +105,6 @@ class ResearchCache:
             [("job", 1), ("dataset", 1), ("params", 1)], unique=True, name="ta_runs_key"
         )
 
-    # ------------------------------------------------------------------
-    # Computed series
-    # ------------------------------------------------------------------
 
     def get_columns(self, dataset: str, request: str) -> pd.DataFrame | None:
         doc = self.columns.find_one({"dataset": dataset, "request": request})
@@ -138,9 +134,6 @@ class ResearchCache:
         }
         self.columns.replace_one({"_id": doc["_id"]}, doc, upsert=True)
 
-    # ------------------------------------------------------------------
-    # Finished runs
-    # ------------------------------------------------------------------
 
     def get_run(self, job: str, dataset: str, params: Mapping[str, Any]) -> dict | None:
         doc = self.runs.find_one(

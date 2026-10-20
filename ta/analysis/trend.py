@@ -23,10 +23,8 @@ import pandas as pd
 from ..engine import compute_series
 from .types import AnalysisResult
 
-#: ADX interpretation buckets (conventional boundaries).
 _BUCKETS = ((20.0, "absent"), (25.0, "weak"), (40.0, "trending"), (np.inf, "strong"))
 
-#: |trend_score| below this reads as "flat".
 _FLAT_BAND = 0.15
 
 
@@ -66,8 +64,6 @@ def run(
     ma_spread_bps = last(f"ma_spread_bps_{fast}_{slow}")
     close = float(frame["close"].iloc[-1])
 
-    # One ATR (or, without highs/lows, one close deviation) is the yardstick a
-    # displacement must clear before its vote counts in full.
     scale = last(f"atr_{adx_period}") if has_hl else None
     if not scale:
         scale = last("stddev_20")

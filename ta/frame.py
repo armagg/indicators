@@ -30,15 +30,9 @@ import pandas as pd
 
 from .errors import FrameError
 
-#: Canonical column names. `open/high/low/close` are prices, `volume` is base
-#: quantity. Anything else in the frame is carried through untouched.
 PRICE_COLUMNS = ("open", "high", "low", "close")
 OHLCV_COLUMNS = PRICE_COLUMNS + ("volume",)
 
-#: Column aliases seen in the wild, mapped to canonical names. The `price_*`
-#: entries are the raw column names `market-data-collector`'s resampler
-#: produces before it renames them, so a frame read straight out of an
-#: intermediate step still works.
 _COLUMN_ALIASES = {
     "o": "open",
     "h": "high",
@@ -60,8 +54,6 @@ _COLUMN_ALIASES = {
 
 _TIME_ALIASES = ("time", "timestamp", "datetime", "date", "ts", "open_time")
 
-#: Columns that are metadata, not series data -- dropped from the working frame
-#: so indicators never see them and `to_records` output stays lean.
 _METADATA_COLUMNS = ("_id", "market_name", "symbol", "interval", "source")
 
 
@@ -76,25 +68,14 @@ class FrameInfo:
     rows: int
     start: pd.Timestamp | None
     end: pd.Timestamp | None
-    #: Inferred bar width in seconds (median of index deltas). `None` when
-    #: there are fewer than two bars.
     interval_sec: float | None
-    #: Bars that *should* exist between `start` and `end` on the inferred grid.
     expected_rows: int | None
-    #: `expected_rows - rows`. Non-zero means the collector had no trades to
-    #: resample for those bars. See the module docstring.
     missing_bars: int | None
-    #: `missing_bars / expected_rows`, in [0, 1]. Above ~0.2 treat every
-    #: rolling-window indicator on this frame as approximate.
     gap_ratio: float | None
-    #: Rows dropped because they duplicated an earlier timestamp.
     duplicates_dropped: int
-    #: Rows dropped because a required price column was NaN.
     nan_rows_dropped: int
     columns: tuple[str, ...]
     has_volume: bool
-    #: True when high < low, or close outside [low, high], on any bar. A real
-    #: sign of a broken upstream write; several indicators divide by (high-low).
     inconsistent_bars: int
 
     def as_dict(self) -> dict:
@@ -141,9 +122,6 @@ def normalize_ohlcv(
 
     df.columns = [str(c).strip().lower() for c in df.columns]
     df = df.rename(columns=_COLUMN_ALIASES)
-    # A rename can collide (e.g. both `amount` and `volume` present). Keep the
-    # first occurrence -- the canonical name -- rather than letting pandas
-    # hand later code a DataFrame where df["volume"] is a 2-column frame.
     df = df.loc[:, ~df.columns.duplicated(keep="first")]
 
     df = _apply_time_index(df, time_column)

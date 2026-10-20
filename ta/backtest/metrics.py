@@ -22,8 +22,6 @@ from typing import Any, Iterable, Sequence
 import numpy as np
 import pandas as pd
 
-#: Seconds after a fill at which to measure it. 600s is the desk's default;
-#: the shorter ones show how fast any edge decays.
 MARKOUT_HORIZONS_SEC = (60, 300, 600, 1800)
 
 
@@ -110,7 +108,6 @@ class RunMetrics:
     inventory_value: float = 0.0
     pnl: float = 0.0
     pnl_bps_of_volume: float | None = None
-    #: Fraction of bars on which the side had at least one live quote.
     buy_uptime: float = 0.0
     sell_uptime: float = 0.0
     max_base: float = 0.0
@@ -140,9 +137,6 @@ def summarize(
     final_base = initial_base + sum(f.signed_base for f in fills)
     final_price = float(prices.iloc[-1]) if len(prices) else 0.0
 
-    # Value the *change* in inventory, not the whole stack: the starting
-    # position was not earned by this run and would otherwise swamp the P&L
-    # of the quoting itself.
     inventory_value = (final_base - initial_base) * final_price
 
     metrics = RunMetrics(

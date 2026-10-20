@@ -43,8 +43,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-#: Divergences a run report must state. Kept as data so `runner.py` can put
-#: them in every artifact without restating them.
 DIVERGENCES = (
     "no bypass-wall / penny-jump (candles carry no order book): live quotes "
     "at least as aggressively as this simulator",
@@ -69,7 +67,7 @@ def _num(config: Mapping[str, Any], key: str, default: float = 0.0) -> float:
 
 @dataclass(frozen=True)
 class Quote:
-    side: str  # "buy" | "sell"
+    side: str
     level: int
     price: float
     size: float
@@ -118,8 +116,6 @@ def effective_spreads(
 
     asymmetry = _num(config, "spread_asymmetry") * scale
     if asymmetry and side in ("buy", "sell"):
-        # Clamp so the split alone can never push a side under the floor,
-        # which would silently break the mean-preserving property.
         if base_min > fee:
             room = base_min - fee
             asymmetry = max(-room, min(room, asymmetry))
@@ -146,9 +142,6 @@ def level_step(config: Mapping[str, Any], num_orders: int, scale: float = 1.0) -
     return 0.0
 
 
-#: How far outside the band, as a fraction of band width, counts as a full
-#: breach. At 0.25, being a quarter of a band-width past the edge puts the
-#: recovering side at its tightest legal spread.
 DEFAULT_RECOVERY_SPAN = 0.25
 
 

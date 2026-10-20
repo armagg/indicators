@@ -28,16 +28,9 @@ class AnalysisResult:
 
     name: str
     params: dict[str, Any]
-    #: Timestamp of the last bar the verdict is based on (UTC).
     asof: pd.Timestamp | None
-    #: The verdict itself: floats, bools, and short labels. This is what
-    #: overlays read; keep it flat and small.
     scalars: dict[str, Any] = field(default_factory=dict)
-    #: Supporting series for charts/debugging. Excluded from `as_dict` unless
-    #: asked for -- a 1000-row series per analysis would drown the verdict.
     series: dict[str, pd.Series] = field(default_factory=dict)
-    #: Point-in-time occurrences (e.g. squeeze releases), oldest first, each
-    #: `{"time": iso, "event": str, ...}`.
     events: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 

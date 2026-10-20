@@ -79,8 +79,6 @@ def vwap_indicator(df: pd.DataFrame, anchor: str = "day") -> pd.DataFrame:
         cumulative_volume = df["volume"].cumsum()
     else:
         freq = {"day": "D", "week": "W", "month": "MS"}[anchor]
-        # to_period on a tz-aware index warns and drops the tz itself; the
-        # frame is already UTC everywhere, so drop it explicitly first.
         groups = df.index.tz_localize(None).to_period(freq)
         cumulative_notional = notional.groupby(groups).cumsum()
         cumulative_volume = df["volume"].groupby(groups).cumsum()

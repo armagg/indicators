@@ -40,8 +40,6 @@ QUEUED, RUNNING, DONE, FAILED, INTERRUPTED = (
 )
 ACTIVE = (QUEUED, RUNNING)
 
-#: Fields that define what a job *is*. Two jobs agreeing on all of these are
-#: the same job, however they were submitted.
 IDENTITY = ("market", "source", "interval", "family", "permutations",
             "consecutive_only", "split", "horizon")
 
@@ -72,7 +70,6 @@ class JobQueue:
         self._lock = threading.Lock()
         self.collection.create_index([("status", 1), ("submitted_at", 1)], name="ta_job_queue")
 
-    # ------------------------------------------------------------------
 
     def recover(self) -> int:
         """Mark jobs orphaned by a previous process. Call once at startup."""
@@ -126,7 +123,7 @@ class JobQueue:
                     "log": lines[-40:],
                 }},
             )
-        except Exception as exc:  # a failed job must not take the worker down
+        except Exception as exc:
             self.collection.update_one(
                 {"_id": identifier},
                 {"$set": {
@@ -137,7 +134,6 @@ class JobQueue:
                 }},
             )
 
-    # ------------------------------------------------------------------
 
     def get(self, identifier: str) -> dict | None:
         return self.collection.find_one({"_id": identifier})

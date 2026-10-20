@@ -42,11 +42,8 @@ from ..signal_value import evaluate, forward_returns
 
 COLLECTION = "tilt_shadow"
 
-#: Bars pulled per observation. Enough for a stable normalization scale
-#: without making the hourly job expensive.
 LOOKBACK_BARS = 2000
 
-#: PLAN requires this much history before the proposal may proceed.
 REQUIRED_DAYS = 28
 
 
@@ -128,7 +125,7 @@ def observe(
                 live = dict(market_config.config)
                 live["_version"] = market_config.version
         except TAError:
-            pass  # a config-manager blip must not lose the observation
+            pass
 
     min_base, max_base = live.get("min_base"), live.get("max_base")
     implied = (
@@ -149,15 +146,10 @@ def observe(
         "ma_spread_bps": verdict.scalars.get("ma_spread_bps"),
         "mid": float(frame["close"].iloc[-1]),
         "implied_target_base": implied,
-        # What the market is actually configured to do right now. The point
-        # of shadow mode is the gap between this and `implied_target_base`.
         "live_target_base": live.get("target_base"),
         "live_min_base": min_base,
         "live_max_base": max_base,
         "live_config_version": live.get("_version"),
-        # Realised inventory needs pnl.balance_snapshots in ClickHouse, which
-        # this project cannot read yet (PLAN options). Recorded as null so the
-        # column exists when that reader lands.
         "live_inventory": None,
         "dropped_forming_bar": bool(dropped),
         "warnings": list(verdict.warnings),
@@ -211,16 +203,6 @@ def score(rows: Sequence[Mapping[str, Any]], *, cadence_sec: float = 3600.0) -> 
     mids = np.array([float(r["mid"]) for r in usable])
 
     fwd = forward_returns(mids, 1)
-    # Only score pairs one cadence apart; a gap means the service was down
-    # and the "next" row is hours later.
-    #
-    # Force nanoseconds before taking the integer view. DatetimeIndex.view(
-    # "int64") returns the dtype's own unit, and pandas 3 no longer defaults to
-    # datetime64[ns]: a Timestamp built from an ISO string is [us] there, so the
-    # same expression yields microseconds (1000x smaller). Every gap would then
-    # miss the cadence window, no pair would score, and this function would
-    # report "not enough observations" forever instead of failing loudly.
-    # as_unit("ns").asi8 is unit-explicit and identical on pandas 2 and 3.
     gaps = np.diff(times.as_unit("ns").asi8) / 1e9
     adjacent = np.concatenate([np.abs(gaps - cadence_sec) <= 0.25 * cadence_sec, [False]])
     scored_fwd = np.where(adjacent, fwd, np.nan)

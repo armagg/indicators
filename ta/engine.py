@@ -28,21 +28,6 @@ from .errors import FrameError, NonCausalIndicator, ParamError
 from .frame import FrameInfo, describe_frame, normalize_ohlcv
 from .registry import IndicatorSpec, get_spec
 
-#: How to treat the leading bars an indicator cannot yet compute honestly.
-#:
-#: ``"mask"`` (default) -- set them to NaN. A window indicator is already NaN
-#:   there; this additionally blanks the stretch where a *recursive* indicator
-#:   (RSI, MACD, ATR, ADX -- anything built on an EMA) is producing numbers
-#:   that are still dominated by its own seed value rather than by the data.
-#:   A 14-period Wilder RSI is non-NaN from bar 14 but does not agree with a
-#:   long-history RSI until roughly bar 65; those 50 bars are where two charts
-#:   of "the same" RSI disagree, and where a backtest finds an edge that
-#:   evaporates live.
-#: ``"trim"`` -- drop those rows entirely. What a backtest wants: no NaN
-#:   handling, no partially-warm samples.
-#: ``"keep"`` -- return the raw recursion. Only for reproducing another
-#:   platform's output, or when you have deliberately seeded the frame with
-#:   extra history.
 WarmupPolicy = str
 WARMUP_POLICIES = ("mask", "trim", "keep")
 
@@ -77,7 +62,7 @@ class IndicatorRequest:
                 raise ParamError(f"indicator request is missing 'name': {value!r}")
             params = data.pop("params", None)
             if params is None:
-                params = data  # flat form: leftover keys are the params
+                params = data
             elif data:
                 raise ParamError(
                     f"indicator request for {name!r} mixes 'params' with loose keys: "
@@ -151,9 +136,7 @@ class ColumnMeta:
     category: str
     params: dict[str, Any]
     warmup_bars: int
-    #: True when the frame was long enough to cover this indicator's warmup.
     sufficient: bool
-    #: Non-NaN values remaining after the warmup policy was applied.
     valid_values: int
 
     def as_dict(self) -> dict:
@@ -177,7 +160,6 @@ class ComputeResult:
     info: FrameInfo
     columns: list[ColumnMeta]
     warmup_policy: WarmupPolicy
-    #: Rows removed from the front under the ``"trim"`` policy.
     trimmed_rows: int = 0
     warnings: list[str] = field(default_factory=list)
 
@@ -356,9 +338,6 @@ def compute(
             )
 
     combined = pd.concat(pieces, axis=1)
-    # Two requests can produce the same column (rsi and rsi:period=14). Keep
-    # one rather than handing back a frame with duplicate labels, where
-    # df["rsi_14"] returns a DataFrame and every downstream `.iloc` breaks.
     duplicated = combined.columns.duplicated(keep="first")
     if duplicated.any():
         dropped = sorted(set(combined.columns[duplicated]))

@@ -39,32 +39,15 @@ from .errors import ParamError, TAError
 from .frame import normalize_ohlcv
 from .tiers import DEFAULT_TIER, MAJOR, TierStore
 
-# --------------------------------------------------------------------------
-# Risk flag thresholds
-# --------------------------------------------------------------------------
-#
-# Each threshold names a concrete failure mode rather than a taste. They are
-# starting points, not truths -- adjust from what the view actually shows.
 
-#: Above this share of missing bars, every rolling window on this market
-#: spans more wall-clock time than its length implies. Matches
-#: `FrameInfo.is_sparse`.
 SPARSE_GAP_RATIO = 0.20
 
-#: A market whose last candle is older than this is not trading in any sense
-#: that matters for quoting.
 STALE_HOURS = 24.0
 
-#: Below this, recursive indicators are still inside their warmup and the
-#: analyses in this view cannot say much.
 THIN_HISTORY_BARS = 200
 
-#: NATR in percent. Above this the market moves multiple percent per bar,
-#: which for a passive quoter is adverse selection waiting to happen.
 HIGH_NATR_PCT = 3.0
 
-#: Coefficient of variation of volume. High means activity arrives in bursts
-#: rather than steadily -- inventory risk is lumpy and hard to size for.
 ERRATIC_VOLUME_CV = 2.0
 
 
@@ -105,8 +88,6 @@ def market_stats(frame: pd.DataFrame, *, now: datetime | None = None) -> MarketS
         natr = verdict.scalars.get("natr")
         vol_percentile = verdict.scalars.get("vol_percentile")
     except TAError:
-        # A frame too short or too broken for the volatility analysis still
-        # deserves a row -- the missing columns are themselves informative.
         pass
 
     median_volume = volume_cv = None
@@ -161,7 +142,7 @@ def load_stats(
     a row saying so.
     """
     if reader is None:
-        from .ohlc import read_ohlc as reader  # local import keeps Mongo lazy
+        from .ohlc import read_ohlc as reader
     try:
         frame = reader(market, source, interval, limit=limit)
     except TAError:
@@ -169,11 +150,6 @@ def load_stats(
     return market_stats(frame, now=now) if frame is not None else MarketStats(flags=("no-data",))
 
 
-# --------------------------------------------------------------------------
-# Rows
-# --------------------------------------------------------------------------
-
-#: Disagreements between the tier list and live config, worst first.
 ALERT_MAJOR_NO_CONFIG = "NO-CONFIG"
 ALERT_MAJOR_OFF = "MAJOR-OFF"
 ALERT_RISK_ON = "RISK-ON"
@@ -270,17 +246,10 @@ def build_view(
             )
         )
 
-    # Disagreements first -- the whole point of the view is that they are
-    # impossible to scroll past.
     rows.sort(
         key=lambda r: (_ALERT_ORDER.get(r.alert, 3), r.tier != MAJOR, r.market)
     )
     return rows
-
-
-# --------------------------------------------------------------------------
-# Rendering
-# --------------------------------------------------------------------------
 
 
 def _table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
@@ -348,11 +317,6 @@ def render(rows: Sequence[MarketRow]) -> str:
     return table + "\n" + "\n".join(footer)
 
 
-# --------------------------------------------------------------------------
-# Proposal drafting
-# --------------------------------------------------------------------------
-
-
 def draft_toggle(
     row: MarketRow,
     *,
@@ -408,11 +372,6 @@ def draft_toggle(
     )
 
 
-# --------------------------------------------------------------------------
-# CLI
-# --------------------------------------------------------------------------
-
-
 def collect(
     source: str,
     *,
@@ -446,8 +405,6 @@ def main(
     reader=None,
 ) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    # `python -m ta.view --source nobitex` is the common case; treat a bare
-    # option list as the `show` subcommand.
     if not argv or argv[0].startswith("-"):
         argv = ["show", *argv]
 

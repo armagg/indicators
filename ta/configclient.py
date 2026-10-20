@@ -48,8 +48,6 @@ from decouple import config as env
 
 from .errors import SourceError
 
-#: Keys config-manager owns and injects into the stored config. Stripped on
-#: read; never included in a write.
 SERVER_OWNED = frozenset({"version", "timestamp", "_id"})
 RISK_OWNED = frozenset({
     "disable_buy", "disable_sell", "sell_to_l0", "buy_size_scale",
@@ -65,7 +63,6 @@ class MarketConfig:
     source: str
     market: str
     version: int | None
-    #: The settings themselves, server bookkeeping already removed.
     config: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -126,9 +123,6 @@ class ConfigManagerClient:
         self.base_url = (base_url or env("CONFIG_MANAGER_URL")).rstrip("/")
         self.transport = transport or UrllibTransport()
 
-    # ------------------------------------------------------------------
-    # Reads
-    # ------------------------------------------------------------------
 
     def _url(self, *parts: str, trailing_slash: bool = False) -> str:
         path = "/".join(urllib.parse.quote(str(p), safe="") for p in parts)
@@ -167,9 +161,6 @@ class ConfigManagerClient:
             )
         return list(body or [])
 
-    # ------------------------------------------------------------------
-    # The single write
-    # ------------------------------------------------------------------
 
     def put_market(
         self, source: str, market: str, settings: Mapping[str, Any]

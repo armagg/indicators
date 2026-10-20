@@ -84,9 +84,6 @@ def get_indicator_endpoint():
     start = args.pop("start", None)
     end = args.pop("end", None)
 
-    # Two request shapes: `indicators=` takes the compact batch form
-    # ("rsi:period=21,macd,atr"); `indicator=` is the legacy single-indicator
-    # form whose parameters arrive as loose query args (`&period=21`).
     batch = args.pop("indicators", None)
     single = args.pop("indicator", None)
     if batch and (single or args):

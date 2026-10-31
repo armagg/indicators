@@ -122,6 +122,18 @@ def test_normalize_maps_to_a_bounded_tilt():
     assert np.isnan(normalize_signal(np.full(5, np.nan))).all()
 
 
+@pytest.mark.parametrize("scale", [1e-9, 1.0, 1e9])
+def test_normalization_ignores_roundoff_but_keeps_real_small_variation(scale):
+    values = np.array([np.nan, 1.0, 1.0 + 1e-14, 1.0 - 1e-14]) * scale
+    result = normalize_signal(values)
+    assert np.isnan(result[0])
+    assert np.all(result[1:] == 0.0)
+
+    varying = np.array([1.0, 1.001, 0.999, 1.002]) * scale
+    result = normalize_signal(varying)
+    assert result.min() < 0 < result.max()
+
+
 def test_evaluate_drops_warmup_and_refuses_thin_overlap():
     signal = np.concatenate([np.full(200, np.nan), np.ones(500)])
     ret = np.full(700, 0.001)

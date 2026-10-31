@@ -1,0 +1,33 @@
+# Action references are pinned; Dependabot proposes updates.
+version: 2
+updates:
+- package-ecosystem: github-actions
+  directory: /
+  schedule:
+    interval: weekly
+    day: tuesday
+    time: "05:05"
+    timezone: Etc/UTC
+  open-pull-requests-limit: 5
+  commit-message:
+    prefix: deps
+- package-ecosystem: pip
+  directory: /
+  schedule:
+    interval: weekly
+    day: tuesday
+    time: "05:05"
+    timezone: Etc/UTC
+  open-pull-requests-limit: 5
+  commit-message:
+    prefix: deps
+- package-ecosystem: docker
+  directory: /
+  schedule:
+    interval: weekly
+    day: tuesday
+    time: "05:05"
+    timezone: Etc/UTC
+  open-pull-requests-limit: 5
+  commit-message:
+    prefix: deps

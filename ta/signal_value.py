@@ -64,6 +64,12 @@ def normalize_signal(values, clip: float = 3.0) -> np.ndarray:
         return np.full(len(x), np.nan)
 
     centre = float(np.median(finite))
+    # Rolling averages can leave a few hundred ULPs of dispersion in an
+    # otherwise constant spread. Normalizing that roundoff invents a tilt.
+    # Use a relative floor so genuinely small, varying signals still work.
+    roundoff = 512 * np.finfo("float64").eps * float(np.max(np.abs(finite)))
+    if np.ptp(finite) <= roundoff:
+        return np.where(np.isfinite(x), 0.0, np.nan)
     mad = float(np.median(np.abs(finite - centre)))
     scale = mad * 1.4826 if mad > 0 else float(np.std(finite))
     if scale <= 0:

@@ -1,0 +1,48 @@
+# Action references are pinned; Dependabot proposes updates.
+name: Tests
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+      with:
+        python-version: '3.14'
+        cache: pip
+        cache-dependency-path: requirements*.txt
+    - run: python -m pip install -r requirements.txt pytest==9.1.1
+    - run: python -m pip check
+    - run: python -m pytest -q
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        persist-credentials: false
+    - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+    - name: Build image without publishing
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+      with:
+        context: .
+        file: Dockerfile
+        push: false
+        cache-from: type=gha,scope=${{ github.job }}-default
+        cache-to: type=gha,mode=max,scope=${{ github.job }}-default
+'on':
+  pull_request: null
+  push:
+    branches:
+    - main
+  workflow_dispatch: {}
+  schedule:
+  - cron: 12 4 * * 1
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true

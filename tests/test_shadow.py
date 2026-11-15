@@ -11,7 +11,7 @@ import pytest
 
 import ta.research.shadow as shadow_module
 from ta.analysis import run_analysis
-from ta.analysis.tilt import DEFAULT_CAP, implied_target_base
+from ta.analysis.tilt import implied_target_base
 from ta.analysis.tilt import run as run_tilt
 from ta.errors import SourceError
 from ta.research.scheduler import ShadowScheduler

@@ -34,8 +34,8 @@ data and two indicators computed in sequence could overwrite each other.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any, Callable, Mapping, Sequence
 
 import pandas as pd
 

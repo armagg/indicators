@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-from ..configclient import ConfigManagerClient, MarketConfig
+from ..configclient import ConfigManagerClient
 from ..errors import ParamError, SourceError, TAError
 from ..signals.overlays import ConfigDelta
 from . import lifecycle

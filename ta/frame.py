@@ -106,15 +106,11 @@ def normalize_ohlcv(
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").astype("float64")
 
-    before = len(df)
     df = df[~df.index.duplicated(keep="last")]
-    duplicates_dropped = before - len(df)
 
-    before = len(df)
     price_cols = [c for c in require if c in PRICE_COLUMNS]
     if price_cols:
         df = df.dropna(subset=price_cols)
-    nan_rows_dropped = before - len(df)
 
     if df.empty:
         raise FrameError("no usable candles left after dropping NaN price rows")

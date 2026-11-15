@@ -7,9 +7,6 @@ under test rather than mocked away.
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
-
 import pytest
 
 from ta.configclient import SERVER_OWNED, ConfigManagerClient, MarketConfig

@@ -8,7 +8,7 @@ from typing import Any, Mapping, Sequence
 import pandas as pd
 
 from ..analysis import run_analysis
-from ..errors import FrameError, ParamError, TAError
+from ..errors import FrameError, TAError
 from ..frame import normalize_ohlcv
 from ..signals import ConfigDelta, OverlayContext, evaluate
 from .metrics import Fill, RunMetrics, summarize

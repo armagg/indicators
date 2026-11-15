@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 
 from ta.signal_value import (
-    SignalValue,
     consecutive_mask,
     evaluate,
     forward_returns,

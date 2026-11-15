@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-import ta
 from ta.errors import ParamError, UnknownIndicator
 from ta.registry import (
     BoolParam,

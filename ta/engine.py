@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd

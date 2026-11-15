@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
 
 from ..errors import ParamError, TAError
-from .runner import DISCLAIMER, BacktestResult, run
+from .runner import DISCLAIMER, run
 
 SWEEPABLE = ("price_min_spread", "price_max_spread", "max_base",
              "number_of_order_each_sides", "spread_multiplier")

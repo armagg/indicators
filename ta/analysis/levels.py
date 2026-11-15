@@ -168,22 +168,24 @@ def run(
     if cluster_bps < 0:
         raise ValueError("cluster_bps must be >= 0")
 
+    params = {
+        "swing_left": swing_left,
+        "swing_right": swing_right,
+        "max_levels": max_levels,
+        "cluster_bps": cluster_bps,
+        "donchian_window": donchian_window,
+        "bb_window": bb_window,
+        "bb_std": bb_std,
+        "kc_window": kc_window,
+        "kc_atr": kc_atr,
+        "kc_multiplier": kc_multiplier,
+        "vwap_anchor": vwap_anchor,
+    }
+
     if len(frame) == 0:
         return AnalysisResult(
             name="levels",
-            params={
-                "swing_left": swing_left,
-                "swing_right": swing_right,
-                "max_levels": max_levels,
-                "cluster_bps": cluster_bps,
-                "donchian_window": donchian_window,
-                "bb_window": bb_window,
-                "bb_std": bb_std,
-                "kc_window": kc_window,
-                "kc_atr": kc_atr,
-                "kc_multiplier": kc_multiplier,
-                "vwap_anchor": vwap_anchor,
-            },
+            params=params,
             asof=None,
             warnings=["empty frame"],
         )
@@ -278,20 +280,6 @@ def run(
             f"frame shorter than swing window ({swing_left}+{swing_right}+1); "
             f"static levels may be empty"
         )
-
-    params = {
-        "swing_left": swing_left,
-        "swing_right": swing_right,
-        "max_levels": max_levels,
-        "cluster_bps": cluster_bps,
-        "donchian_window": donchian_window,
-        "bb_window": bb_window,
-        "bb_std": bb_std,
-        "kc_window": kc_window,
-        "kc_atr": kc_atr,
-        "kc_multiplier": kc_multiplier,
-        "vwap_anchor": vwap_anchor,
-    }
 
     scalars = {
         "last_close": close,

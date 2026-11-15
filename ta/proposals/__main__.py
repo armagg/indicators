@@ -44,7 +44,7 @@ def _render_detail(proposal: Proposal, history: list[dict]) -> str:
         f"id           {proposal.id}",
         f"market       {proposal.source}/{proposal.market}",
         f"status       {proposal.status}"
-        + (f"  (impact: HIGH)" if proposal.is_high_impact else ""),
+        + ("  (impact: HIGH)" if proposal.is_high_impact else ""),
         f"base_version {proposal.base_version}",
         f"created      {proposal.created_at}",
         "",

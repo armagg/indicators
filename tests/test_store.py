@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-from datetime import timezone as _tz
-
 import pytest
 
 import ta

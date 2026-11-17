@@ -1,0 +1,30 @@
+name: Python 3.15 runtime validation
+on:
+  pull_request:
+  push:
+    branches: [agent/roubgar/roubgar-indicators-dep-bundle]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: docker build -t indicators-validation .
+      - name: Full tests inside production image
+        run: docker run --rm indicators-validation sh -c 'python --version && python -m pip check && python -m pytest tests/ -q -p no:cacheprovider'
+      - name: Start Flask
+        run: |
+          docker run -d --name indicators-http -p 5000:5000 indicators-validation
+          for i in $(seq 1 30); do curl -fsS http://localhost:5000/health && break; sleep 1; done
+          curl -fsS http://localhost:5000/indicators > /tmp/catalogue.json
+          python -c 'import json; d=json.load(open("/tmp/catalogue.json")); assert d; print("Indicator catalogue OK")'
+      - name: Disposable Mongo integration
+        run: |
+          docker network create validation-net
+          docker run -d --name mongo --network validation-net mongo:8
+          for i in $(seq 1 60); do docker exec mongo mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' | grep -q 1 && break; sleep 1; done
+          docker run --rm --network validation-net -v "$PWD/.github/scripts/mongo-smoke.py:/app/mongo-smoke.py:ro" indicators-validation python /app/mongo-smoke.py

@@ -1,0 +1,26 @@
+name: Python 3.15 runtime validation
+on:
+  pull_request:
+  push:
+    branches: [agent/roubgar/roubgar-indicators-dep-bundle]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t indicators-validation .
+      - name: Full tests inside production image
+        run: docker run --rm indicators-validation sh -c 'python --version && python -m pip check && python -m pytest tests/ -q -p no:cacheprovider'
+      - name: Start Flask
+        run: |
+          docker run -d --name indicators-http -p 5000:5000 indicators-validation
+          for i in $(seq 1 30); do curl -fsS http://localhost:5000/health && break; sleep 1; done
+          curl -fsS http://localhost:5000/indicators > /tmp/catalogue.json
+          python -c 'import json; d=json.load(open("/tmp/catalogue.json")); assert d; print("Indicator catalogue OK")'
+      - name: Disposable Mongo integration
+        run: |
+          docker network create validation-net
+          docker run -d --name mongo --network validation-net mongo:8
+          for i in $(seq 1 60); do docker exec mongo mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' | grep -q 1 && break; sleep 1; done
+          echo 'aW1wb3J0IG9zCmltcG9ydCBwYW5kYXMgYXMgcGQKZnJvbSBweW1vbmdvIGltcG9ydCBNb25nb0NsaWVudAppbXBvcnQgdGEKZnJvbSB0YSBpbXBvcnQgc3RvcmUsIG9obGMKZnJvbSB0YS5jYWNoZSBpbXBvcnQgUmVzZWFyY2hDYWNoZSwgY29tcHV0ZV9jYWNoZWQKZGI9TW9uZ29DbGllbnQoIm1vbmdvZGI6Ly9tb25nbzoyNzAxNyIsdHpfYXdhcmU9VHJ1ZSkudmFsaWRhdGlvbgpkYi5jbGllbnQuYWRtaW4uY29tbWFuZCgicGluZyIpCnJvd3M9W10KZm9yIGkgaW4gcmFuZ2UoMTAwKToKIHQ9cGQuVGltZXN0YW1wKCIyMDI1LTAxLTAxIikrcGQuVGltZWRlbHRhKGhvdXJzPWkpCiByb3dzLmFwcGVuZChkaWN0KG1hcmtldF9uYW1lPSJYIixzb3VyY2U9InMiLGludGVydmFsPSIxSCIsdGltZT10LnN0cmZ0aW1lKCIlWS0lbS0lZFQlSDolTTolUyIpLG9wZW49MTAwK2ksaGlnaD0xMDIraSxsb3c9OTkraSxjbG9zZT0xMDEraSx2b2x1bWU9MTApKQpkYi5vaGxjLmluc2VydF9tYW55KHJvd3MpCm9obGMuX2NsaWVudD1kYi5jbGllbnQKb3MuZW52aXJvbi51cGRhdGUoTU9OR09fVVJJPSJtb25nb2RiOi8vbW9uZ286MjcwMTciLERCX05BTUU9InZhbGlkYXRpb24iLE9ITENfQ09MTEVDVElPTl9OQU1FPSJvaGxjIikKZnJhbWU9b2hsYy5yZWFkX29obGMoIlgiLCJzIiwiMUgiKQphc3NlcnQgbGVuKGZyYW1lKT09MTAwIGFuZCBzdHIoZnJhbWUuaW5kZXgudHopPT0iVVRDIgpyZXN1bHQ9dGEuY29tcHV0ZShmcmFtZSwicnNpLCBtYWNkOmZhc3Q9OCxzbG93PTIxLHNpZ25hbD01IikKbj1zdG9yZS5zYXZlKHJlc3VsdCxzeW1ib2w9IlgiLHNvdXJjZT0icyIsaW50ZXJ2YWw9IjFIIixjb2xsZWN0aW9uPWRiLnZhbHVlcykKYT1saXN0KGRiLnZhbHVlcy5maW5kKHt9LHsiX2lkIjowLCJjb21wdXRlZF9hdCI6MH0pLnNvcnQoWyhrLDEpIGZvciBrIGluIHN0b3JlLk5BVFVSQUxfS0VZXSkpCmFzc2VydCBuPjAgYW5kIGxlbihhKT09bgphc3NlcnQgc3RvcmUuc2F2ZShyZXN1bHQsc3ltYm9sPSJYIixzb3VyY2U9InMiLGludGVydmFsPSIxSCIsY29sbGVjdGlvbj1kYi52YWx1ZXMpPT1uCmI9bGlzdChkYi52YWx1ZXMuZmluZCh7fSx7Il9pZCI6MCwiY29tcHV0ZWRfYXQiOjB9KS5zb3J0KFsoaywxKSBmb3IgayBpbiBzdG9yZS5OQVRVUkFMX0tFWV0pKQphc3NlcnQgYT09YiBhbmQgZGIudmFsdWVzLmNvdW50X2RvY3VtZW50cyh7fSk9PW4KY2FjaGU9UmVzZWFyY2hDYWNoZShkYi5jb2x1bW5zLGRiLnJ1bnMpOyBjYWNoZS5lbnN1cmVfaW5kZXhlcygpCngsczE9Y29tcHV0ZV9jYWNoZWQoZnJhbWUsInJzaSIsZGF0YXNldD0iZml4dHVyZSIsY2FjaGU9Y2FjaGUpCnksczI9Y29tcHV0ZV9jYWNoZWQoZnJhbWUsInJzaSIsZGF0YXNldD0iZml4dHVyZSIsY2FjaGU9Y2FjaGUpCmFzc2VydCBzMT09eyJoaXRzIjowLCJtaXNzZXMiOjF9IGFuZCBzMj09eyJoaXRzIjoxLCJtaXNzZXMiOjB9CnBkLnRlc3RpbmcuYXNzZXJ0X2ZyYW1lX2VxdWFsKHgseSxjaGVja19mcmVxPUZhbHNlKQpjYWNoZS5wdXRfcnVuKCJqb2IiLCJmaXh0dXJlIix7ImEiOjF9LHsic3RhdHVzIjoiZG9uZSJ9KQphc3NlcnQgY2FjaGUuZ2V0X3J1bigiam9iIiwiZml4dHVyZSIseyJhIjoxfSk9PXsic3RhdHVzIjoiZG9uZSJ9CnByaW50KCJNb25nbyBPSExDLCB1cHNlcnQsIGNhY2hlIGFuZCBzdGF0dXMgcGFzc2VkOyBkb2N1bWVudHMiLG4pCg==' | base64 -d > /tmp/mongo-smoke.py
+          docker run --rm --network validation-net -v /tmp/mongo-smoke.py:/app/mongo-smoke.py indicators-validation python /app/mongo-smoke.py

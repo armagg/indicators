@@ -9,7 +9,7 @@ python-decouple==3.8
 # datetime64[ns]; ta/research/shadow.py forces ns explicitly before taking an
 # integer view of the index, and tests/test_shadow.py pins that.
 blinker==1.9.0
-click==8.5.0
+click==8.5.1
 dnspython==2.9.1
 itsdangerous==2.2.0
 Jinja2==3.1.6
